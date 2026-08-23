@@ -89,7 +89,8 @@ docker compose -f playground/docker-compose.yml up
 ## Semver triggers — MAJOR bumps even when the diff is small
 
 - Removing/renaming an exported name from any `appkit.*` module, or changing a signature.
-- Changing the error envelope's shape, or renaming/removing one of the nine `code` values.
+- Changing the error envelope's shape, or renaming/removing one of the ten `code` values
+  (`docs/CONTRACT.md` §1 — `"error"` is a documented member, not an omission).
 - Changing the `HttpClient` interface, or `useApiClient`'s return shape.
 - Renaming a settings key or `.env` key.
 

@@ -124,7 +124,7 @@ Not applicable — appkit ships no models.
 |---|---|
 | `appkit.cache` | `build_cache_key`, `cached_call`, `invalidate_namespace`, `namespace_version` |
 | `appkit.mixins` | `CachedListMixin` |
-| `appkit.exceptions` | `standard_exception_handler` + the nine `code` values |
+| `appkit.exceptions` | `standard_exception_handler` + the ten `code` values (`docs/CONTRACT.md` §1) |
 | `appkit.request_id` | `request_id_var`, `RequestIDMiddleware`, `RequestIDFilter` |
 | `appkit.permissions` | `IsAppAdmin` |
 | `appkit.pagination` | a shared default `pagination_class` |
@@ -204,9 +204,11 @@ Flagged here rather than silently fixed, since the base-scaffold's `backend/tool
 the *source* appkit's own versions are built from, and this repo has no standing to edit it:
 
 - `standard_exception_handler`'s fallback `code` (`"error"`, for an `APIException` outside the
-  nine handled types) isn't one of the nine documented codes. Worth resolving before appkit
-  freezes its exception handler at v1.0.0, not after — a client branching on the documented
-  set has no case for it.
+  eight specifically-mapped types) was undercounted here as outside "the nine documented
+  codes". **Resolved in `docs/CONTRACT.md` §1: the set is ten, not nine** — `"error"` is now a
+  documented member in its own right, with the HTTP status authoritative for it. See that
+  section for the full reasoning and the exhaustive `ApiErrorCode` this implies for the
+  frontend half.
 - `invalidate_namespace` (get-then-increment) isn't atomic — a cache eviction between the two
   calls raises. Low-probability, but appkit's blast radius means it now affects every app.
 - `cached_call` can't distinguish "cache miss" from "legitimately cached `None`" — documented
