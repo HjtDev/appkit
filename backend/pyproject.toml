@@ -152,9 +152,6 @@ testpaths = ["../tests/backend"]
 python_files = ["test_*.py"]
 # Coverage gate is 95%, not the usual 85% (CLAUDE.md) — appkit ships complete rather than
 # growing under four installed apps, so its own suite stands in for usage feedback.
-# NOTE: at the end of Phase 1 this suite has zero real tests, so `uv run pytest` fails the
-# coverage gate — expected, not a regression; Phase 1's verification runs ruff/mypy/build,
-# not the full pytest gate.
 addopts = """
   -ra --strict-markers --strict-config
   --cov=appkit --cov-report=term-missing --cov-fail-under=95

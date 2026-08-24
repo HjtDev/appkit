@@ -695,6 +695,7 @@ request, never at startup.
 ### 2.16 `appkit.conf`
 
 ```python
+UNSET: Final[object]             # sentinel: "fall back to the APPKIT default", never None
 DEFAULTS: Final[dict[str, Any]]  # see §7 for the full dict + defaults
 def get_setting(key: str) -> Any: ...
 ```
@@ -882,6 +883,7 @@ class AppKitConfig(AppConfig):
         register(checks.check_middleware_order)
         register(checks.check_unknown_settings_keys)
         register(checks.check_throttle_scopes)
+        register(checks.check_logging_filter)
 ```
 
 **Why yes, and why the lean's reason (1) is now a concrete requirement, not a hedge:**
@@ -910,6 +912,12 @@ buried here alone.
 
 ## 6. System checks registered by `AppKitConfig.ready()`
 
+**Six functions, seven IDs** — the mapping is stated once here, not left as an inference from the
+`ready()` code block: `appkit.E001` → `check_request_id_middleware`; `appkit.E002` and
+`appkit.W001` → `check_exception_handler` (one function, since both inspect the same setting);
+`appkit.W002` → `check_middleware_order`; `appkit.W003` → `check_unknown_settings_keys`;
+`appkit.W004` → `check_throttle_scopes`; `appkit.W005` → `check_logging_filter`.
+
 | ID | Level | Fires when | Why this one is silent otherwise |
 |---|---|---|---|
 | `appkit.E001` | **Error** | `appkit.request_id.RequestIDMiddleware` is absent from `MIDDLEWARE`. | Every error envelope's `request_id` field silently reads `"-"`, and no log line correlates to any other — a debugging capability quietly missing, with no exception anywhere pointing at the cause. |
@@ -918,6 +926,25 @@ buried here alone.
 | `appkit.W002` | Warning | `RequestIDMiddleware` is present but ordered **before** `SecurityMiddleware` in `MIDDLEWARE` (only evaluated when `SecurityMiddleware` is present at all). | Both scaffold docs and this contract's own wiring block specify the order; a swap doesn't crash anything; it just means the request ID is assigned before security headers are considered, which is order-of-operations debt worth flagging, not blocking. |
 | `appkit.W003` | Warning | The host's `APPKIT` dict contains a key not present in `appkit.conf.DEFAULTS`. | A typo (`APPKIT = {"CACHE_TIMOUT": 30}`) would otherwise silently use the *default* `CACHE_TIMEOUT` forever, with the typo'd key simply ignored — exactly the class of bug `conf.py`'s whole design (§3.5) exists to prevent, closed the rest of the way by a check that actually looks at what keys were provided. |
 | `appkit.W004` | Warning | A view reachable by walking `ROOT_URLCONF` declares a `throttle_scope` string with no matching entry in `REST_FRAMEWORK["DEFAULT_THROTTLE_RATES"]`. | `APP-DESIGN.md` §7.4 names this exact failure by description: "a typo'd `throttle_scope` fails open, silently" — DRF only raises `AssertionError` for a missing rate at request time, per request, so it can ship to production and pass every test that doesn't happen to exercise that exact view under throttling. |
+| `appkit.W005` | Warning | `settings.LOGGING` is configured (and `LOGGING_CONFIG` is not `None`), but no handler in it references a filter resolving to `appkit.request_id.RequestIDFilter` (or a subclass of it). Skipped entirely when `LOGGING` is unset/empty or `LOGGING_CONFIG is None`. | The middleware runs and the contextvar is set regardless, so nothing errors — but any handler reading the raw `LogRecord` (a `%`-style file handler, a mail-admins handler) stamps `request_id="-"` on every line forever. This is exactly the silent-degradation shape the other checks exist to catch, normally only discovered while correlating a production incident. |
+
+**`appkit.W004`'s detection scope, stated plainly so a clean run isn't misread as full
+coverage.** Reliably detected: `throttle_scope` as a class attribute on a class-based view reached
+via `pattern.callback.view_class` or `.cls` (DRF's `as_view()` sets both), including
+`@api_view`-decorated function views (DRF wraps these in a real class). **Not detectable, and not
+attempted:** a scope assigned at runtime inside `initial()`/`get_throttles()`, a viewset choosing a
+scope per-action, or a scope on a plain function view with no DRF wrapper at all.
+
+**Proposed, not implemented in this phase:** the reverse mismatch — a
+`DEFAULT_THROTTLE_RATES` entry that no reachable view's `throttle_scope` ever uses. Usually a typo
+or a leftover from a removed app, the same class of bug as W004's forward direction — recorded here
+as an open proposal rather than added silently, for a decision in a future phase.
+
+**`appkit.W005` and §12's cut `LOGGING`-fragment constant are not the same thing, despite both
+touching `LOGGING`.** The constant §12 rejected would have been appkit *shipping* a fragment of
+host log-rendering policy — exactly what §4 keeps out. W005 ships no fragment and mandates no
+rendering; it only inspects a `LOGGING` dict the host already chose to configure, warns rather than
+errors, and is silenceable like every other warning here.
 
 ---
 
@@ -1193,7 +1220,10 @@ full of required keys, an *absence* here reads as an oversight unless it's state
   lines from `IsAppAdmin`), a `LOGGING`-fragment constant (would re-couple appkit to the exact
   host policy §4 keeps out), a separate `ErrorCode` enum living alongside the `ERROR_CODES`
   tuple (one representation of the same ten values, not two), and a per-app custom error code
-  mechanism (rejected in §1 — `details` is where domain-specific identity belongs).
+  mechanism (rejected in §1 — `details` is where domain-specific identity belongs). **Not the
+  same cut as `appkit.W005` (§6):** the rejected constant would have *shipped* a piece of host
+  log-rendering policy; W005 ships nothing and mandates no rendering, it only inspects a
+  `LOGGING` dict the host already configured and warns, silenceably, if it's missing one wire.
 - **Would a consuming app use each helper without reading its source?** Applied as a literal
   test per entry, and two failed it on first pass — fixed here rather than merely documented
   around, per this same guide's instruction to treat that as a shape problem, not a docs
