@@ -22,8 +22,10 @@ _FIXTURES_DIR = Path(__file__).parents[1] / "fixtures"
 # from the invocation) MUST have both extras installed, or the security-relevant crypto/image
 # tests would silently not exist rather than fail. `pytest.UsageError` aborts before collection
 # — a misconfigured gate run fails on the first line instead of passing green.
-_EXTRAS_FOR_GATE = {"cryptography": 'uv run --extra crypto --extra images pytest',
-                     "PIL": 'uv run --extra crypto --extra images pytest'}
+_EXTRAS_FOR_GATE = {
+    "cryptography": "uv run --extra crypto --extra images pytest",
+    "PIL": "uv run --extra crypto --extra images pytest",
+}
 
 
 def pytest_configure(config: pytest.Config) -> None:

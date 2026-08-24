@@ -10,6 +10,8 @@ pattern as ``urls_throttling.py`` — never the default test-tree URLconf.
 
 from __future__ import annotations
 
+from typing import ClassVar
+
 from django.urls import path
 from rest_framework.authentication import BasicAuthentication
 from rest_framework.permissions import IsAuthenticated
@@ -32,7 +34,7 @@ class _FixedRateThrottle(AnonRateThrottle):
 class _ThrottledView(APIView):
     """First GET succeeds; the second (same client/IP) is throttled and gets Retry-After."""
 
-    throttle_classes = [_FixedRateThrottle]
+    throttle_classes: ClassVar = [_FixedRateThrottle]
 
     def get(self, request: object) -> Response:
         return Response({"ok": True})
@@ -44,8 +46,8 @@ class _UnauthenticatedView(APIView):
     flipped to a plain 403 by APIView.handle_exception.
     """
 
-    authentication_classes = [BasicAuthentication]
-    permission_classes = [IsAuthenticated]
+    authentication_classes: ClassVar = [BasicAuthentication]
+    permission_classes: ClassVar = [IsAuthenticated]
 
     def get(self, request: object) -> Response:
         return Response({"ok": True})

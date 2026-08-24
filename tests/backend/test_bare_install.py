@@ -53,9 +53,7 @@ def test_importing_crypto_and_files_never_imports_their_extras_at_module_scope()
         cwd=BACKEND_DIR,
         env={**os.environ, "PYTHONPATH": str(BACKEND_DIR / "src")},
     )
-    assert result.returncode == 0, (
-        f"probe failed:\nstdout={result.stdout}\nstderr={result.stderr}"
-    )
+    assert result.returncode == 0, f"probe failed:\nstdout={result.stdout}\nstderr={result.stderr}"
     assert result.stdout.strip() == "OK"
 
 

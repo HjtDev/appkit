@@ -9,8 +9,6 @@ settings before any positive case is tested.
 
 from __future__ import annotations
 
-import logging
-
 from django.test import override_settings
 
 from appkit import checks
@@ -67,9 +65,7 @@ def test_e002_when_handler_is_still_drfs_default() -> None:
 
 
 def test_w001_when_handler_is_a_third_party_wrapper() -> None:
-    with override_settings(
-        REST_FRAMEWORK={"EXCEPTION_HANDLER": "somewhere.else.custom_handler"}
-    ):
+    with override_settings(REST_FRAMEWORK={"EXCEPTION_HANDLER": "somewhere.else.custom_handler"}):
         ids = _ids(checks.check_exception_handler(app_configs=None))
         assert "appkit.W001" in ids
         assert "appkit.E002" not in ids
@@ -253,9 +249,7 @@ def test_no_w005_when_filter_is_registered_under_a_non_obvious_key(monkeypatch) 
         logging_dict={
             "version": 1,
             "filters": {"corr-id": {"()": "appkit.request_id.RequestIDFilter"}},
-            "handlers": {
-                "console": {"class": "logging.StreamHandler", "filters": ["corr-id"]}
-            },
+            "handlers": {"console": {"class": "logging.StreamHandler", "filters": ["corr-id"]}},
         },
     )
     assert checks.check_logging_filter(app_configs=None) == []
@@ -269,9 +263,7 @@ def test_no_w005_when_filter_is_a_subclass(monkeypatch) -> None:
             "filters": {
                 "request_id": {"()": "tests.backend.test_checks._SubclassedRequestIDFilter"}
             },
-            "handlers": {
-                "console": {"class": "logging.StreamHandler", "filters": ["request_id"]}
-            },
+            "handlers": {"console": {"class": "logging.StreamHandler", "filters": ["request_id"]}},
         },
     )
     assert checks.check_logging_filter(app_configs=None) == []
@@ -282,12 +274,8 @@ def test_no_w005_when_resolved_filter_is_a_pre_built_instance(monkeypatch) -> No
         monkeypatch,
         logging_dict={
             "version": 1,
-            "filters": {
-                "request_id": {"()": "tests.backend.test_checks._shared_filter_instance"}
-            },
-            "handlers": {
-                "console": {"class": "logging.StreamHandler", "filters": ["request_id"]}
-            },
+            "filters": {"request_id": {"()": "tests.backend.test_checks._shared_filter_instance"}},
+            "handlers": {"console": {"class": "logging.StreamHandler", "filters": ["request_id"]}},
         },
     )
     assert checks.check_logging_filter(app_configs=None) == []
