@@ -1,0 +1,12 @@
+[
+  "validation_error",
+  "parse_error",
+  "not_authenticated",
+  "authentication_failed",
+  "permission_denied",
+  "not_found",
+  "method_not_allowed",
+  "throttled",
+  "server_error",
+  "error"
+]
