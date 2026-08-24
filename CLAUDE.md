@@ -70,10 +70,23 @@ app's dependency — flag it before adding.
 
 ## Commands
 
+Tests run on Postgres, not SQLite (`docs/APP-DESIGN.md` §7.5) — a fresh clone has no database
+of its own. `make test`/`make test-bare` bring up `docker-compose.test.yml`'s ephemeral
+Postgres (port 55432, tmpfs data) and tear it down after; nothing to install beyond Docker and
+`uv`. Raw equivalents, for when a Postgres is already reachable on `localhost:5432` (`uv sync`
+run once, first):
+
 ```bash
-cd backend && uv sync
-uv run pytest                     # authoritative gate for the Python half
-uv run ruff check --fix . && uv run ruff format .
+make test        # gate: authoritative, >=95% coverage, both extras, against the ephemeral DB
+make test-bare    # bare-install check: neither extra, against the ephemeral DB
+make lint          # ruff check + format --check, backend AND ../tests together
+make typecheck    # mypy src
+make check        # all four, in that order — test-bare last, since it strips extras from the venv
+
+cd backend && uv sync --extra crypto --extra images
+uv run pytest                     # gate: authoritative, >=95% coverage, both extras installed
+uv run --exact pytest -m "not requires_extra" --no-cov   # bare-install check: neither extra
+uv run ruff check --fix . ../tests && uv run ruff format . ../tests   # `.` alone silently skips ../tests
 uv run mypy src
 uv build
 

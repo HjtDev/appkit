@@ -1,0 +1,14 @@
+[
+  {"value": "hello world", "length": 8, "suffix": "…", "expected": "hello w…"},
+  {"value": "hello", "length": 10, "suffix": "…", "expected": "hello"},
+  {"value": "hello", "length": 5, "suffix": "…", "expected": "hello"},
+  {"value": "hello world", "length": 1, "suffix": "…", "expected": "…"},
+  {"value": "hello", "length": 0, "suffix": "…", "expected": ""},
+  {"value": "hello", "length": -5, "suffix": "…", "expected": ""},
+  {"value": "hello world", "length": 8, "suffix": "...", "expected": "hello..."},
+  {"value": "😀😀😀😀😀", "length": 3, "suffix": "…", "expected": "😀😀…",
+   "note": "codepoint counting: 5 emoji codepoints truncated to 3 total, not a UTF-16-unit count"},
+  {"value": "éllo world", "length": 3, "suffix": "…", "expected": "é…",
+   "note": "combining acute accent is a separate codepoint from 'e' — counted, not treated as one grapheme"},
+  {"value": "", "length": 5, "suffix": "…", "expected": ""}
+]

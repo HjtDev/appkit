@@ -7,6 +7,7 @@
 
 from __future__ import annotations
 
+import importlib.util
 import json
 from collections.abc import Callable, Iterator
 from pathlib import Path
@@ -16,6 +17,27 @@ import pytest
 from django.core.cache import cache
 
 _FIXTURES_DIR = Path(__file__).parents[1] / "fixtures"
+
+# docs/CONTRACT.md §9's two-leg test strategy: the gate leg (`-m "not requires_extra"` absent
+# from the invocation) MUST have both extras installed, or the security-relevant crypto/image
+# tests would silently not exist rather than fail. `pytest.UsageError` aborts before collection
+# — a misconfigured gate run fails on the first line instead of passing green.
+_EXTRAS_FOR_GATE = {"cryptography": 'uv run --extra crypto --extra images pytest',
+                     "PIL": 'uv run --extra crypto --extra images pytest'}
+
+
+def pytest_configure(config: pytest.Config) -> None:
+    markexpr = config.getoption("-m", default="") or ""
+    if "not requires_extra" in markexpr:
+        return  # the bare-install leg — deliberately runs without either extra
+
+    missing = [name for name in _EXTRAS_FOR_GATE if importlib.util.find_spec(name) is None]
+    if missing:
+        raise pytest.UsageError(
+            f"The gate test run requires both the 'crypto' and 'images' extras installed "
+            f"(missing: {missing!r}). Run: uv run --extra crypto --extra images pytest\n"
+            f"(For the bare-install leg instead, pass -m 'not requires_extra' explicitly.)"
+        )
 
 
 @pytest.fixture

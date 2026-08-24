@@ -18,6 +18,8 @@ Deviates from APP-DESIGN.md §7.1's generic template in ways forced by docs/CONT
 
 from __future__ import annotations
 
+import os
+
 SECRET_KEY = "test-only-not-a-secret"  # noqa: S105
 DEBUG = False
 USE_TZ = True
@@ -44,14 +46,21 @@ MIDDLEWARE = [
 
 ROOT_URLCONF = "tests.backend.urls"
 
+# Every value below is overridable by an env var (docs/APP-DESIGN.md §7.5: "the connection host
+# comes from an env var so the same config works" locally and in CI/Docker) — the literal
+# defaults are what a bare `uv run pytest` needs against a Postgres already listening on
+# localhost:5432 with the postgres/postgres superuser, matching docker-compose.test.yml's
+# non-default-port service when POSTGRES_HOST/POSTGRES_PORT are exported instead (see the
+# Makefile's `test` target). Nothing about this changes behaviour for a setup that already
+# works today — every env var falls back to the previous hardcoded value.
 DATABASES = {
     "default": {
         "ENGINE": "django.db.backends.postgresql",
-        "NAME": "test_appkit",
-        "USER": "postgres",
-        "PASSWORD": "postgres",  # noqa: S105
-        "HOST": "localhost",  # overridden to "postgres" by CI env, APP-DESIGN.md §10
-        "PORT": "5432",
+        "NAME": os.environ.get("POSTGRES_DB", "test_appkit"),
+        "USER": os.environ.get("POSTGRES_USER", "postgres"),
+        "PASSWORD": os.environ.get("POSTGRES_PASSWORD", "postgres"),  # noqa: S105
+        "HOST": os.environ.get("POSTGRES_HOST", "localhost"),
+        "PORT": os.environ.get("POSTGRES_PORT", "5432"),
     }
 }
 
