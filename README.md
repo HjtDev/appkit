@@ -140,21 +140,43 @@ Not applicable — appkit ships no models.
 
 ## Exports (frontend)
 
-<!-- STUB — settled in Phase 5, exact types/signatures. Intended surface: -->
+Full signatures, failure paths, and reasoning: `docs/CONTRACT.md` §14–§23 (frontend contract,
+Session 2). Nothing beyond this table is exported from `src/index.ts`.
 
 | Export | Provides |
 |---|---|
-| `HttpClient` | The interface a host's concrete client satisfies structurally — appkit never implements one |
-| `ApiClientProvider` | The one shared provider a host mounts, carrying `client` + a `basePaths` map |
-| `useApiClient(key, defaultBasePath)` | Called from each installed app's own `api/config.ts`, never directly by a host |
-| `ApiError` / `ApiErrorEnvelope` / `ApiErrorCode` | Matches the backend envelope exactly — one definition instead of one per app |
+| `HttpClient` | The five-method interface (`get`/`post`/`put`/`patch`/`delete`) a host's concrete client satisfies structurally — appkit never implements one |
+| `ApiClientProvider` | The one shared provider a host mounts, carrying `client`, an optional `headerSources` array, and a `basePaths` map |
+| `useApiClient(key, defaultBasePath)` | Called from each installed app's own `api/config.ts`, never directly by a host. Both arguments required — a missing `basePaths` entry falls back to the app's own default, never to `""`/`/` |
+| `HeaderSource` | `() => HeadersInit \| Promise<HeadersInit>` — see "Header injection" below |
+| `ApiError` / `isApiError` | Matches the backend envelope exactly — one definition instead of one per app. `isApiError` is a brand check, not `instanceof`, so it survives a duplicate-copy install |
+| `isApiErrorEnvelope` / `apiErrorFromEnvelope` | Pure envelope-parsing helpers — validate/construct from already-fetched data, never touch `fetch`/`Response` themselves |
+| `ApiErrorCode` / `ClientErrorCode` / `ApiErrorEnvelope` | Types — the ten backend codes plus this client's own `"unknown_error"`, kept as a separate type so the ten-member union stays a true mirror |
 | `makeQueryClient()` | A factory (never a module-level singleton) — mirrors the scaffold's own `frontend/lib/query-client.ts` |
-| date / price / truncation helpers | Mirror the backend's `dates`/`money`/`text` modules |
+| `truncate` / `toEnglishDigits` / `toPersianDigits` | Mirror the backend's `appkit.text` — codepoint-aware, not UTF-16-unit-aware |
+| `parseAmount` / `formatAmount` | Mirror `appkit.money` — fixed `,` separator, never locale-dependent |
+| `toJalali` / `fromJalali` / `formatJalali` / `parseJalali` / `calendarDateIn` | Mirror `appkit.dates`. Date-only by default; `calendarDateIn(instant, timeZone)` is the explicit, no-default bridge from an instant to a calendar date |
+| `mediaUrl(value, baseUrl)` | Mirrors `appkit.media` — takes its base as an argument, never reads `NEXT_PUBLIC_API_URL` itself |
 
-<!-- STUB — settled in Phase 0: per-request header injection. Needed for the future auth app
-     (Authorization header) without appkit knowing anything about auth. Candidates: an
-     interceptor/middleware list on the client contract, or a host-supplied getHeaders()
-     callback. Neither decided. -->
+**Not exported, on purpose:** a concrete client/`apiClient` singleton, `getApiBaseUrl`, a
+`QueryClient` singleton, the `ApiClientContext` object itself, any manager or config-hook shape,
+any UI component, any storage helper. Reasoning for each: `docs/CONTRACT.md` §21.
+
+## Header injection
+
+Settled in Phase 0 (`docs/CONTRACT.md` §16): `ApiClientProvider` takes an optional
+`headerSources?: ReadonlyArray<HeaderSource>` prop. Sources run left-to-right, then the call's
+own `init.headers` last — later always wins, header names compared case-insensitively so
+`authorization`/`Authorization` from two sources collapse into one. A source that throws or
+rejects **fails the request**, naming which source failed, rather than silently shipping the
+request without that header. This is how the future JWT app attaches `Authorization` without
+appkit knowing anything about auth:
+
+> appkit never reads, stores, refreshes, or inspects a token. It invokes opaque callbacks the
+> host supplies and merges their output into request headers.
+
+Token refresh / retry-on-401 is explicitly **not** appkit's job — see "What appkit deliberately
+does not provide" below.
 
 ## Usage — mounting the shared provider
 
@@ -165,22 +187,41 @@ adds a `basePaths` entry to this same provider, it never nests a second provider
 
 ```tsx
 // frontend/app/providers.tsx
-import { ApiClientProvider } from "appkit";
-import { apiClient } from "@/lib/api-client";
+"use client";
 
-<ApiClientProvider
-  client={apiClient}
-  basePaths={{
-    // ...entries for each installed app's own README-suggested prefix
-  }}
->
-  {children}
-</ApiClientProvider>;
+import { useState, useMemo } from "react";
+import { QueryClientProvider } from "@tanstack/react-query";
+import { ApiClientProvider, makeQueryClient } from "appkit";
+import { apiClient } from "@/lib/api-client";
+import { getAuthHeaders } from "@/lib/auth"; // host's own — appkit knows nothing about it
+
+export function Providers({ children }: { children: React.ReactNode }) {
+  const [queryClient] = useState(() => makeQueryClient());
+  const headerSources = useMemo(() => [getAuthHeaders], []); // stable reference — see below
+
+  return (
+    <QueryClientProvider client={queryClient}>
+      <ApiClientProvider
+        client={apiClient}
+        headerSources={headerSources}
+        basePaths={{
+          // ...entries for each installed app's own README-suggested prefix
+        }}
+      >
+        {children}
+      </ApiClientProvider>
+    </QueryClientProvider>
+  );
+}
 ```
 
 `apiClient` is the host's own concrete client (`frontend/lib/api-client.ts`) — appkit owns the
 `HttpClient` interface and this provider, never a client implementation. See `CLAUDE.md`'s
 "The frontend boundary" for why that split is deliberate, not an oversight.
+
+`headerSources` must be a **stable reference** (built with `useMemo`/module scope, never an
+inline array literal) — the decorated client is memoised on it, and a new array identity every
+render rebuilds every installed app's own manager on every render (`docs/CONTRACT.md` §15).
 
 ## What appkit deliberately does not provide
 
@@ -197,6 +238,15 @@ import { apiClient } from "@/lib/api-client";
   string-scanning for `<script>` is a blocklist that provides false confidence. The two real
   pieces underneath are in scope instead: HTML sanitisation and an ORM lookup-key allowlist
   (see Exports above).
+- **No client implementation on the frontend half — interface and shared provider only.**
+  appkit owns `HttpClient` and `ApiClientProvider`/`useApiClient`; the host always constructs
+  and injects the real client (`NEXT_PUBLIC_API_URL`, CSRF, credentials mode — all host
+  configuration). See "The frontend boundary" in `CLAUDE.md`.
+- **No retry-on-401 / token refresh**, anywhere in `headerSources` or the client appkit
+  decorates. A real refresh loop needs the refresh endpoint, infinite-loop protection, and
+  concurrent-refresh dedupe — all auth-specific knowledge appkit must never have. That's the
+  host's concrete client's job; the future JWT app's own README documents it there
+  (`docs/CONTRACT.md` §J).
 
 ## Known caveats inherited from the base-scaffold helpers this replaces
 

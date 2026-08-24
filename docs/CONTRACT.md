@@ -1209,6 +1209,788 @@ full of required keys, an *absence* here reads as an oversight unless it's state
 
 ---
 
-*End of backend contract. Session 2 appends the frontend SDK contract below this line,
-including the `ApiErrorCode` union mirroring §1's ten codes exactly and the `mediaUrl()`
-counterpart to §2.11.*
+*End of backend contract.*
+
+---
+
+# Frontend contract (Session 2 of 2)
+
+`appkit`'s TypeScript SDK — the `HttpClient` interface, the shared provider/hook pair, and the
+pure utilities every installed app's own frontend package depends on. Written to the same
+discipline as the backend half: every entry below is something that cannot change without a
+**major** version bump (`CLAUDE.md`'s Semver triggers), stated with its full signature, its
+failure path, and — where it deviates from a source document — the reasoning for the deviation.
+
+Source material read, not modified — a separate project; findings against it are flagged inline
+rather than fixed there:
+
+- `../base-scaffold/frontend/lib/api-client.ts` — the fetcher every host page (and every
+  installed app's own low-level client, per `BASE-DESIGN.md` §3/§8.1) plugs into today.
+- `../base-scaffold/frontend/lib/query-client.ts` — the shared `QueryClient` factory.
+
+---
+
+## 13. The boundary, stated before any signature
+
+appkit's frontend half is **three things**: the `HttpClient` **interface** (§14), the shared
+`ApiClientProvider`/`useApiClient` **pair** (§15), and a set of **pure utilities** (§17–§18) that
+take their inputs as arguments and touch nothing ambient. It is **not**: a client
+implementation, a `fetch` call, a reader of `process.env`/`NEXT_PUBLIC_*`, or a token store.
+
+> appkit never reads, stores, refreshes, or inspects a token. It invokes opaque callbacks the
+> host supplies and merges their output into request headers.
+
+The host keeps constructing the real client — it reads `NEXT_PUBLIC_API_URL`, handles CSRF,
+decides the credentials mode, all host configuration (`APP-DESIGN.md` §12,
+`BASE-DESIGN.md` §3) — and injects it through the provider. An appkit-shipped client
+implementation would have to read the host's environment itself, which is exactly the coupling
+this architecture exists to prevent.
+
+**Standing trigger for every future session touching this half:** if any part of this contract
+starts requiring appkit to know a URL, a token, or an env var, that's the boundary being
+crossed. Stop.
+
+---
+
+## 14. `HttpClient` — the injected interface
+
+```ts
+export interface HttpClient {
+  get<T>(path: string, init?: RequestInit): Promise<T>;
+  post<T>(path: string, body?: unknown, init?: RequestInit): Promise<T>;
+  put<T>(path: string, body?: unknown, init?: RequestInit): Promise<T>;
+  patch<T>(path: string, body?: unknown, init?: RequestInit): Promise<T>;
+  delete<T>(path: string, init?: RequestInit): Promise<T>;
+}
+```
+
+**Public.** Five methods — **a deliberate deviation from `APP-DESIGN.md` §12's excerpt**, which
+lists only `get`/`post`/`patch`/`delete`. `put` is added because:
+
+1. The scaffold's own `ApiClient` (`api-client.ts:197-203`) already implements it — including it
+   here costs the scaffold zero changes.
+2. An SDK wrapping a DRF `ViewSet`'s full-update action (`PUT`, distinct from `PATCH`'s partial
+   update) needs to express it. Without `put` in the interface, that SDK either can't type its
+   manager method against `HttpClient` at all, or reaches for `request()` — which isn't part of
+   this interface (below) — defeating the point of a typed contract.
+3. Adding a required method to `HttpClient` **after** v1.0.0 ships is a MAJOR bump for every host
+   whose concrete client doesn't yet implement it. Getting the method count right now, while the
+   only cost is "one more line," is cheaper than a future major bump forcing every host to add a
+   `put` they may not have needed yet.
+
+**`request()` is deliberately not part of this interface.** It's the host implementation's own
+internal method (`api-client.ts:110-183` is the whole reason `get`/`post`/`put`/`patch`/`delete`
+can be this thin) — exposing it here would make the interface leak implementation shape instead
+of describing behaviour.
+
+**Structural satisfaction, not nominal.** TypeScript is structurally typed, so the scaffold's
+concrete `ApiClient` satisfies `HttpClient` by having the right methods — no `implements`
+declaration, no import of appkit's type required in the host's own `api-client.ts` for this to
+type-check (`APP-DESIGN.md` §12, "SDK-to-host client contract").
+
+---
+
+## 15. `ApiClientProvider` / `useApiClient`
+
+```ts
+export interface ApiClientProviderProps {
+  /** Any client satisfying HttpClient — normally the host's frontend/lib/api-client.ts
+   *  apiClient, passed in as-is. */
+  client: HttpClient;
+  /** basePath per installed app, keyed by the app's own namespace (§1.3 of APP-DESIGN.md). */
+  basePaths?: Record<string, string>;
+  /** Composable per-request header sources — see §16. Must be a stable reference; see the
+   *  memoisation contract below. */
+  headerSources?: ReadonlyArray<HeaderSource>;
+  children: React.ReactNode;
+}
+
+export function ApiClientProvider(props: ApiClientProviderProps): React.ReactElement;
+
+/** Called from an app's own api/config.ts, never directly by a host. `key` is this app's
+ *  namespace; `defaultBasePath` is what the app's own README suggests if the host's
+ *  basePaths map has no entry for `key`. Both arguments are REQUIRED. */
+export function useApiClient(
+  key: string,
+  defaultBasePath: string,
+): { client: HttpClient; basePath: string };
+```
+
+Both **Public.**
+
+- **`defaultBasePath` is required, no default** — the same "no host-wide-safe default" reasoning
+  §2.2's `cache_namespace` already establishes on the backend half. A missing or typo'd entry in
+  the host's `basePaths` map falls back to **the calling app's own default**, never to `""` or
+  `/`; there is no code path in which a `basePath` resolves to something that would make a
+  manager method's `${basePath}/...` construct a same-origin root request. `useApiClient` throws
+  a descriptive error at call time if `defaultBasePath` is empty — a programming error inside the
+  calling app, not a host-facing failure.
+- **Normalisation:** a trailing slash on either the resolved `basePath` or a manager's own
+  leading slash is stripped before concatenation, so `basePath + path` can never produce a
+  double slash. Documented once here rather than per-app, since every SDK's manager relies on it.
+- **The provider-missing error names the file to edit, not just the failing hook** — this is the
+  literal requirement, not paraphrased:
+  ```
+  useApiClient("notifications") was called outside an <ApiClientProvider>. Mount it once in
+  frontend/app/providers.tsx — see appkit's README, "Usage — mounting the shared provider".
+  ```
+  Deliberate, matching `APP-DESIGN.md` §12's own reasoning: a hook that silently returned
+  `client: undefined` would fail three layers away, inside a `fetch` call, with an error that
+  says nothing about a missing provider.
+- **The context object itself is not exported.** A host (or a confused app) cannot construct a
+  second `ApiClientProvider`-compatible context by hand — `ApiClientProvider` and `useApiClient`
+  are the only two ways to reach it, matching the "one entrypoint" rule (§21).
+- **Memoisation contract, stated as a failure path with a mandatory test:** the client
+  `useApiClient` returns is the injected `client`, decorated once with `headerSources` merging
+  (§16), memoised on `[client, headerSources]`. **A host passing an inline array literal
+  (`headerSources={[...]}`) as a JSX prop defeats this memoisation** — a new array identity every
+  render invalidates every installed app's own `useMemo`'d manager (`APP-DESIGN.md` §12,
+  "Manager & hook conventions"), reconstructing it on every render. Test: render with a stable
+  `headerSources` ref across two re-renders and assert the manager instance is referentially
+  unchanged; render with an inline array and assert it is **not** — the second case documents the
+  footgun rather than silently tolerating it.
+- **`basePaths` trade-off, restated from `APP-DESIGN.md` §12, not reopened:** the key is
+  stringly-typed and unenforced by the compiler. A typo in the host's map silently falls back to
+  the calling app's own default rather than failing to build — mitigated by each app's README
+  documenting its exact key, and by `INTEGRATION-GUIDE.md` §2 step 11 making it an explicit
+  wiring step. Escape hatch for an app needing a differently-configured client (an auth app on
+  `credentials: "include"`): nest a second `ApiClientProvider` deeper in the tree; the same React
+  context resolution rules that make this work for any context make it work here.
+
+---
+
+## 16. Header injection — merge semantics
+
+```ts
+export type HeaderSource = () => HeadersInit | Promise<HeadersInit>;
+```
+
+**Public** (the type; sources themselves are host/app-supplied, never appkit's). The mechanism a
+host uses to attach per-request headers — the future JWT app's `Authorization` header being the
+motivating case — without appkit knowing anything about auth. Left unspecified, this is exactly
+the kind of decision that gets made ad hoc by whoever writes the first app that needs it; stated
+here so it's made once, correctly, for every app that ever needs it after.
+
+Requirements, made mechanical rather than left to convention:
+
+1. **Order and precedence.** `headerSources` are invoked **left-to-right**; a manager's own
+   `init.headers` for that call is applied **last**. Later always wins over earlier. This is what
+   lets two independent sources — an auth app's `Authorization` and a tenant-scoping app's
+   `X-Tenant-ID`, say — compose without either one having to know the other exists.
+2. **Normalisation.** All three `HeadersInit` forms a source or `init.headers` may produce
+   (a plain object, an array of `[name, value]` pairs, or a `Headers` instance) are normalised
+   through the `Headers` constructor before merging — a source is free to return whichever shape
+   is most convenient for it.
+3. **Case-insensitive keys.** Header names are compared case-insensitively during the merge, so
+   `authorization` from one source and `Authorization` from another/`init.headers` collapse to
+   **one** header (the later value), never two headers with the same semantic name reaching the
+   wire. `Headers` already gives this for free once normalised through it — stated explicitly
+   here because it's the property a hand-rolled object-spread merge (`{...a, ...b}`) would get
+   wrong for `Authorization` vs `authorization`.
+4. **Failure is fatal, not silent.** A source that throws synchronously or returns a rejected
+   promise **fails the request** — the decorated client's call rejects before the underlying
+   `client.get/post/...` is ever invoked. The rejection is wrapped naming which source failed
+   (by array index, since sources are anonymous functions):
+   `Header source #1 threw while building request headers: <original error>`.
+   **Non-obvious failure path, the reason this rule exists:** a source that silently drops out on
+   error (the request proceeding without its header) turns a wiring bug into a **401 that reads
+   like an auth bug** — the caller debugs "why did my token expire" when the real cause is "the
+   header source threw and got swallowed." Failing loudly keeps the two failure classes distinct.
+5. **Async is supported.** Sources are awaited **in order**, not raced — a JWT app's source doing
+   a synchronous refresh-if-expired check before returning `{ Authorization: ... }` is the
+   motivating shape, and ordering guarantees a later source can rely on an earlier one having
+   already resolved (e.g. a logging header that reads a value an auth source set into a shared
+   in-memory store as a side effect — discouraged in general, but not made impossible by racing).
+6. **No retry-on-401 anywhere in this mechanism.** See §J — a source can build a fresh header
+   from already-valid state, but *detecting* a 401 and retrying the call is explicitly the host
+   client's responsibility, not something `headerSources` or the decorator wraps.
+
+**Mandated tests**, the composition surface being exactly what a hand-written per-app
+implementation would get wrong piecemeal: two sources with overlapping keys (later wins); two
+sources whose overlapping key differs only in case (still collapses to one header); one async
+source; one source that throws (request rejects, others' headers never reach the wire); a call's
+own `init.headers` overriding both sources; and an MSW-backed test asserting the merged header
+actually arrives on the wire request, not just that the merge function returns the right object.
+
+---
+
+## 17. `ApiError`, the envelope types, and the pure parsing helpers
+
+```ts
+/** The ten codes from the backend contract's §1, verbatim and in the same order. Exhaustive —
+ *  a `switch (error.code)` over this union type-checks against the real, closed set. */
+export type ApiErrorCode =
+  | "validation_error"
+  | "parse_error"
+  | "not_authenticated"
+  | "authentication_failed"
+  | "permission_denied"
+  | "not_found"
+  | "method_not_allowed"
+  | "throttled"
+  | "server_error"
+  | "error"; // the documented catch-all — see §1's four rules, reproduced below
+
+/** This client's own code for a response that isn't the envelope at all (an nginx error page,
+ *  a truncated body, a non-JSON 500) — kept OUT of ApiErrorCode so that union stays a true,
+ *  unmodified mirror of the ten codes the backend actually emits. */
+export type ClientErrorCode = "unknown_error";
+
+export interface ApiErrorEnvelope {
+  error: {
+    code: ApiErrorCode;
+    message: string;
+    details: Record<string, unknown>;
+    request_id: string | null;
+  };
+}
+
+export class ApiError extends Error {
+  readonly status: number;
+  readonly code: ApiErrorCode | ClientErrorCode;
+  readonly details: Record<string, unknown>;
+  readonly requestId: string | null;
+  readonly retryAfter: string | null;
+  /** The raw, un-parsed response body — present only on the ClientErrorCode ("unknown_error")
+   *  path, so a caller debugging "the server sent something weird" doesn't have to reproduce
+   *  the request to see what it actually was. */
+  readonly body?: unknown;
+
+  constructor(
+    message: string,
+    options: {
+      status: number;
+      code: ApiErrorCode | ClientErrorCode;
+      details?: Record<string, unknown>;
+      requestId?: string | null;
+      retryAfter?: string | null;
+      body?: unknown;
+    },
+  );
+}
+
+/** Brand check, not `instanceof` — still correct if two copies of appkit ever land in one
+ *  tree (§21's duplicate-copy safeguard), since `instanceof` across two module instances of
+ *  the same class fails even for a "real" ApiError. */
+export function isApiError(value: unknown): value is ApiError;
+
+/** Pure. Validates, does not assume: `data` must be an object with an `error` object whose
+ *  `code` is one of the ten ApiErrorCode values, `message` is a string, `details` is an
+ *  object, and `request_id` is a string or null. An unrecognised `code` FAILS the guard. */
+export function isApiErrorEnvelope(data: unknown): data is ApiErrorEnvelope;
+
+/** Pure. Never throws while constructing an error — a non-envelope `body` (HTML, empty,
+ *  null, valid-JSON-non-envelope, an envelope with an unrecognised code) produces a
+ *  well-formed ApiError with code "unknown_error" and `body` set to the raw input, rather
+ *  than the parser itself failing on the failure path it exists to describe. */
+export function apiErrorFromEnvelope(input: {
+  status: number;
+  body: unknown;
+  requestId: string | null;
+  retryAfter: string | null;
+}): ApiError;
+```
+
+All **Public.**
+
+- **Mirrors §1's envelope character-for-character**, including the four rules about `"error"`
+  being the documented catch-all — reproduced in `ApiErrorCode`'s own doc comment (matching this
+  document's own §1 rule 4: the union carries all ten values with no fallthrough case, "not only
+  in prose"). **This is the drift-correction §1 already made, now load-bearing on this half
+  too**: a frontend contract that shipped a nine-member union would be the exact bug the backend
+  session found and fixed, reintroduced from the other side.
+- **Purity is a rule, not a property of today's implementation.** `isApiErrorEnvelope` and
+  `apiErrorFromEnvelope` import nothing beyond `ApiErrorCode`/`ApiErrorEnvelope`/`ApiError`
+  themselves — no `fetch`, no `Response`, no `baseUrl`, no `process.env`. This is what keeps
+  these two functions on the interface side of §13's boundary: they operate on **already-fetched
+  data** (a status code, a parsed-or-unparsed body, header values the caller already read), never
+  on a live request. A future session adding a `fetch` call to either function is the boundary
+  violation §13 warns about, concretely.
+- **`isApiErrorEnvelope` validates, not assumes** — the literal requirement: `data` must be a
+  non-null object with an `error` property that is itself an object; `error.code` must be a
+  member of the **closed** ten-value set (not merely `typeof === "string"`); `error.message` must
+  be a string; `error.details` must be an object; `error.request_id` must be a string or `null`.
+  **An unrecognised `code` value fails the guard entirely**, rather than passing the envelope
+  through with a `code` outside `ApiErrorCode` — this is what keeps every downstream
+  `switch (error.code)` exhaustive and type-safe; a malformed or third-party body (a proxy
+  emitting its own `{"error": {"code": "gateway_timeout", ...}}` shape, say) must be rejected by
+  the guard, not silently accepted as a tenth-plus code.
+- **`apiErrorFromEnvelope` never throws while constructing an error** — this is the single most
+  important behaviour in this module, matching the framing of the backend's most important
+  per-module test (§2.9's `file_url` seek-restore). A parser that can itself throw on the
+  malformed-input path it exists to handle turns "the server returned something unexpected" into
+  an unhandled exception three layers from the actual problem — the same failure shape §15's
+  provider-missing error and §16's header-source-failure both exist to prevent by naming the
+  cause instead. Header-derived values (`requestId`, `retryAfter`) are **read by the caller**
+  (the host's concrete client, which has the live `Response`) and passed in — this function never
+  touches `Response` itself, keeping it pure per the rule above.
+- **Mandated tests, the exact adversarial-input list, not a happy-path sample:** an HTML body (an
+  nginx error page), an empty body, `null`, valid JSON that isn't an envelope shape at all, a
+  well-formed envelope with a `code` outside the ten (must fail `isApiErrorEnvelope` and fall
+  through to the `"unknown_error"` path), an envelope missing `details`, and a 204 (empty body,
+  success status — `apiErrorFromEnvelope` is never called on this path by a correctly-written
+  caller, but the function itself must not crash if it somehow is).
+- **Follow-up flagged for the base-scaffold, not applied here (separate repo, outside this
+  session's scope):** `../base-scaffold/frontend/lib/api-client.ts` currently parses the envelope
+  inline (`isEnvelope`, lines 63-67) and declares its own `ApiError` (lines 29-54) rather than
+  importing appkit's. Once appkit v1.0.0 ships, the scaffold's `ApiClient.request()` should call
+  `isApiErrorEnvelope`/`apiErrorFromEnvelope` and construct appkit's `ApiError`, so the host and
+  every installed SDK's retry predicate (§20) agree on what an error *is* via one class, not two
+  structurally-similar ones. The same file's doc comment (line 21) also states "nine" codes —
+  the identical drift §1 already corrected on the backend half, now visible on this one too.
+
+---
+
+## 18. Utilities that must agree with the backend
+
+```ts
+export function truncate(value: string, length: number, suffix?: string): string; // suffix default "…"
+export function toEnglishDigits(value: string): string;
+export function toPersianDigits(value: string): string;
+
+export function parseAmount(value: string | number): number;
+export function formatAmount(value: number, currency?: string): string; // currency default ""
+
+export interface JalaliDate { year: number; month: number; day: number; }
+export function toJalali(value: string | JalaliDate): JalaliDate; // string is "YYYY-MM-DD"
+export function fromJalali(value: JalaliDate): string; // returns "YYYY-MM-DD"
+export function formatJalali(value: JalaliDate, fmt?: string): string; // fmt default "%Y/%m/%d"
+export function parseJalali(value: string, fmt?: string): JalaliDate;
+/** The explicit bridge from an instant to a calendar date in a given zone — see the timezone
+ *  rule below. `timeZone` is a required IANA name; there is no default. */
+export function calendarDateIn(instant: Date | string, timeZone: string): JalaliDate;
+
+export function mediaUrl(value: string | null | undefined, baseUrl: string): string | null;
+```
+
+All **Public.** Each mirrors a §2.11–§2.14 backend counterpart; the pairing and where behaviour
+must match, stated per function rather than assumed from the name:
+
+- **`truncate` ↔ §2.12's `truncate`.** Same suffix default (`"…"`), same total-length-including-
+  suffix counting rule (`truncate("hello world", 8)` → `"hello w…"`, matching the backend
+  example exactly), same degenerate case (`length <= suffix.length` returns the clamped suffix).
+  **Counts Unicode codepoints, not UTF-16 code units** — implemented via `Array.from(value)`,
+  never bare `.length`/`.slice()` indexing, because a string containing an astral character (most
+  emoji, some combining sequences) has `.length` values that disagree with Python's `len()` on
+  the identical string. **Non-obvious failure path, mandatory test:** truncating a string
+  containing an emoji or a combining character must produce the same character-count result a
+  Python `len()`-based truncation of the identical string would, not a UTF-16-unit-based one that
+  can split a surrogate pair mid-codepoint.
+- **`toEnglishDigits`/`toPersianDigits` ↔ §2.12's identical pair.** Same two source digit sets
+  (Persian `۰۱۲۳۴۵۶۷۸۹`, Arabic-Indic `٠١٢٣٤٥٦٧٨٩`), same pass-through-unrecognised-characters
+  behaviour, never raises. Used internally by `parseAmount` and `parseJalali`, exactly mirroring
+  how `appkit.money.parse_amount`/`appkit.dates.parse_jalali` use their Python counterparts
+  internally (§2.12).
+- **`parseAmount` ↔ §2.14's `parse_amount` — the one place JS's lack of an int type forces a
+  documented divergence in *shape*, not in *intent*.** Accepts a digit string (Persian/
+  Arabic-Indic digits normalised via `toEnglishDigits` first) or a `number`, strips thousands
+  separators (`,`/`٬`). **Rejects a non-integer `number` outright, throwing `TypeError`** —
+  mirroring the backend's float rejection, since JS has no separate int/float type and a
+  currency amount arriving as `12000.5` is the identical defect-in-the-caller case §2.14
+  documents, just detectable via `Number.isInteger` instead of `isinstance(value, float)`.
+  **Additionally throws `RangeError`** for a value (or a parsed string) exceeding
+  `Number.MAX_SAFE_INTEGER` — the backend's `int` has no such ceiling, so this is a real
+  divergence, stated rather than hidden: a JS caller handling an amount near or beyond 2^53 must
+  keep it as a string end-to-end and never round-trip it through `parseAmount`/`formatAmount`.
+  **Raises the same `ValueError`-equivalent (a plain `Error`)** for a string that isn't a valid
+  integer after normalisation.
+- **`formatAmount` ↔ §2.14's `format_amount`.** Same thousands-grouping shape
+  (`1000000` → `"1,000,000"`, `"1,000,000 IRT"` with `currency: "IRT"`), same never-raises
+  contract including negative values and `0`. **Uses an explicit ASCII `,` separator, never
+  `Intl.NumberFormat`** — `Intl.NumberFormat`'s grouping character is locale-dependent (a
+  `fa-IR` locale renders `٬`, a `de-DE` locale renders `.`), and a locale-dependent formatter
+  here would make the *same* `formatAmount(1000000)` call render differently across two
+  browsers, disagreeing with the backend's fixed-format `format_amount` for no reason tied to the
+  actual data. **Digits:** both halves emit **Latin** digits by default in this function;
+  `toPersianDigits` is an explicit, separate call a caller makes on the *result* if
+  Persian-digit rendering is wanted — keeping `formatAmount`'s own contract fixed regardless of
+  locale.
+- **Jalali conversion — the four core functions plus the explicit timezone bridge.** No
+  third-party or ambient-clock type in any signature — `toJalali`/`fromJalali`/`formatJalali`/
+  `parseJalali` take/return the plain `JalaliDate` shape or a `"YYYY-MM-DD"` string only, same
+  signature-hygiene reasoning as §2.13's "no third-party type in any signature." **`month names
+  ship on neither half in v1.0.0`** — `formatJalali`'s `fmt` supports only the numeric directives
+  `%Y %m %d %H %M %S %%`; an unrecognised directive throws, mirroring `strftime`'s own failure
+  mode exactly as §2.13's `format_jalali` already documents. This removes an entire divergence
+  class (Persian month-name spelling/dialect disagreeing between an admin-rendered email and a
+  client-rendered page) by not shipping the feature at all in v1.0.0, rather than shipping two
+  independently-tuned name tables that drift.
+
+  **The timezone rule — decided here because correct arithmetic alone still produces a wrong
+  answer without it:**
+
+  > The **backend decides the calendar date**; the **frontend only formats and parses it**.
+  > Date-only API fields are serialized `"YYYY-MM-DD"`. Backend `appkit.dates.to_jalali`
+  > localises a `datetime` via `django.utils.timezone.localtime()` (Django's own `TIME_ZONE`
+  > setting) before extracting the Jalali date — a naive `datetime` is treated as already-local.
+  > No new `APPKIT` setting is introduced for this. **`toJalali`/`fromJalali` on the frontend
+  > accept only a date-only value** (a `"YYYY-MM-DD"` string or a `JalaliDate`), **never a raw
+  > `Date`/instant** — this is what makes it impossible for the frontend half to silently
+  > re-derive "today" using the browser's own local timezone and disagree with the calendar
+  > date the backend already committed to. `calendarDateIn(instant, timeZone)` is the one
+  > explicit escape hatch for a caller holding a real ISO instant (a `created_at` timestamp, say)
+  > who needs *a* calendar date from it — `timeZone` is a **required** IANA zone name with no
+  > default, and a host wires it to the same zone as Django's `TIME_ZONE`, so the one place a
+  > timezone decision is made is explicit and visible at the call site, never implicit in
+  > `new Date().getTimezoneOffset()`.
+
+  **Non-obvious failure path, mandatory test:** `calendarDateIn` at a day boundary — an instant
+  at `23:30 UTC` with `timeZone: "Asia/Tehran"` (UTC+3:30) must resolve to the **next** calendar
+  day, proving the function actually localises rather than truncating the instant's UTC date.
+
+- **`mediaUrl` ↔ §2.11's `file_url`/`absolute_url` — the counterpart §2.11 explicitly promised,
+  now delivered with the argument that keeps it inside the boundary.** `mediaUrl(value, baseUrl)`
+  takes its base **as an argument**, never reading `NEXT_PUBLIC_API_URL` itself — this is the
+  literal mechanism that keeps §13's boundary intact for the one function in this contract that
+  would otherwise have the strongest pull toward reading an env var directly. The host's own code
+  (or an app's manager, which already has the injected `basePath`/client) supplies `baseUrl`;
+  `mediaUrl` itself stays pure. Edge behaviour mirrors the backend exactly, per §2.11's own
+  closing paragraph: `null`/`undefined` in → `null` out; an already-absolute URL (detected the
+  same way — `scheme`/authority present) passes through unchanged, never double-prefixed.
+  **Which one is authoritative, restated from §2.11 so this function's scope reads as
+  deliberately narrow, not incomplete:** the backend absolutizes wherever a request exists (every
+  ordinary API response) and via `SITE_URL` where it doesn't (emails, background tasks) — this
+  frontend function exists only as the fallback for a response that happens to carry a relative
+  path (a legacy endpoint, an app that deliberately returns one), absolutizing against the
+  frontend's own **API origin**, not the site origin.
+
+---
+
+## 19. The shared-fixture rule — one file, both suites
+
+Stated as a general mechanism this contract commits to, not a per-utility footnote:
+
+> Any behaviour that must agree across the two halves is verified by **one fixture file both
+> test suites load**, never by two independently hand-written test files that happen to agree
+> today. A divergence between the halves must be impossible to introduce by editing only one
+> side's tests.
+
+- **Location:** `tests/fixtures/*.json`, a directory shared by `tests/backend/` and
+  `tests/frontend/` (`APP-DESIGN.md` §7.1's test-tree layout) — test-only, shipped in neither the
+  Python nor the npm distributable.
+- **Four fixture files this contract commits to:**
+  - `error-codes.json` — the ten `code` values in the exact order given in §1. Both
+    `appkit.exceptions.ERROR_CODES` (§2.3) and `ApiErrorCode` (§17) are asserted against this
+    file rather than against each other's source directly — this is what turns "session 1 and
+    session 2 agreed by hand" (currently the actual state of things, since this document itself
+    was the only thing keeping them in sync) into a fact a test enforces.
+  - `jalali-vectors.json` — see coverage below.
+  - `money-vectors.json` — a table of `{input, output}` pairs covering `parse_amount`/
+    `parseAmount`'s normalisation (Persian/Arabic-Indic digit inputs, thousands-separator
+    variants) and `format_amount`/`formatAmount`'s grouping, including `0` and a negative value.
+  - `truncate-vectors.json` — length/suffix/expected-output triples, including the emoji and
+    combining-character cases §18 names explicitly.
+- **Jalali vector coverage, enumerated so a future implementation phase doesn't generate a round
+  number of arbitrary dates instead of the cases that actually catch algorithm disagreements:**
+  - Every leap year in the 33-year Jalali cycle, and the non-leap years immediately adjacent to
+    each — leap-year *boundary* years are where two "correct-looking" algorithms most often
+    diverge.
+  - Esfand 29 vs. Esfand 30 in both a leap and a non-leap year — named in §2.13's own drafting
+    notes as the single most common Jalali bug class.
+  - Farvardin 1 (Nowruz) across several years, including years where the corresponding Gregorian
+    date itself shifts (Nowruz drifts between March 20 and March 21).
+  - The month-length boundary: the first six 31-day months vs. the next five 30-day months.
+  - Gregorian leap years, including a century year (2000 — a Gregorian leap year; 2100 — not).
+  - Dates well outside the near present — Jalali years in the 1300s and 1450s — since an
+    algorithm disagreement is more likely to surface away from the current decade than within it.
+  - **Every vector round-tripped in both directions** — Gregorian→Jalali→Gregorian and
+    Jalali→Gregorian→Jalali must both return the original input.
+- **Jalali implementation — recommendation: vendor the arithmetic, don't take a runtime
+  dependency on it.** `jalaali-js` is stable but low-activity — evaluated and not disqualifying
+  on its own, but the conversion itself is fixed, well-defined arithmetic (the standard
+  33-year-cycle algorithm) that needs no upstream updates once correct, which is precisely the
+  profile of code that's safer vendored than depended on: a vendored ~120-line implementation
+  (MIT-equivalent, attributed in a header comment) keeps the frontend half's **zero runtime
+  `dependencies`** property (§22) intact, and the golden-vector fixture above is what makes
+  vendoring safe rather than reckless — a vendored implementation with no test coverage would be
+  the worse choice. Alternatives considered: taking `jalaali-js` as a real dependency (rejected —
+  the only benefit over vendoring is not maintaining ~120 lines, at the cost of a runtime
+  dependency this package otherwise has none of); the platform's own `Intl` with
+  `calendar: "persian"` (rejected — the result depends on the runtime's ICU version and data,
+  which is exactly the kind of environment-dependent divergence the golden-vector fixture exists
+  to eliminate; two hosts on different Node/browser ICU builds could disagree on the identical
+  input).
+
+---
+
+## 20. `makeQueryClient`
+
+```ts
+export function makeQueryClient(): QueryClient;
+```
+
+**Public.** A **factory, never a module-level singleton** — ported unchanged from
+`../base-scaffold/frontend/lib/query-client.ts:19-37`, including its full reasoning: Next.js
+renders on the server, and a module-level `QueryClient` would be shared across every concurrent
+request/user, leaking one visitor's cached data into another's response. A host calls this
+exactly once per browser session, inside `useState`, in `frontend/app/providers.tsx` (§23).
+
+- Same defaults as the scaffold's version: `staleTime: 60_000`, `refetchOnWindowFocus: false`,
+  and the 4xx-vs-5xx-aware retry predicate (never retry a 4xx — the response won't change on
+  retry; retry a network failure or 5xx up to twice).
+- **The retry predicate checks `isApiError(error)` (§17's brand check), not
+  `error instanceof ApiError`** — the reasoning is the same one that motivates the brand check
+  in the first place: an `instanceof` check fails silently across two module instances of the
+  same class (the exact "two copies of appkit" scenario §21's duplicate-copy safeguard exists to
+  detect), which would make the retry predicate treat every `ApiError` as an unrecognised error
+  and retry a 400 needlessly.
+- **Zero parameters in v1.0.0.** The documented escape hatch for a host wanting different
+  defaults is `const qc = makeQueryClient(); qc.setDefaultOptions({...})` — react-query's own
+  public API, not a new appkit surface. Adding an optional config parameter later (e.g.
+  `makeQueryClient(overrides?: Partial<QueryClientConfig>)`) is additive, not a breaking change,
+  so there's no cost to deferring it until a real host need appears.
+
+---
+
+## 21. `src/index.ts` — the complete export list
+
+Per `APP-DESIGN.md` §12's "one entrypoint" rule: everything a host or an installed app can use is
+exported from here; nothing under an internal path is ever imported directly. The `exports` map
+in `package.json` (§22) makes this enforced by Node's resolver, not merely by convention.
+
+```ts
+// frontend/src/index.ts
+
+export type { HttpClient, HeaderSource } from "./client";
+export { ApiClientProvider, useApiClient } from "./provider";
+export type { ApiClientProviderProps } from "./provider";
+
+export {
+  ApiError,
+  isApiError,
+  isApiErrorEnvelope,
+  apiErrorFromEnvelope,
+} from "./errors";
+export type { ApiErrorCode, ClientErrorCode, ApiErrorEnvelope } from "./errors";
+
+export { makeQueryClient } from "./query-client";
+
+export {
+  truncate,
+  toEnglishDigits,
+  toPersianDigits,
+} from "./text";
+export { parseAmount, formatAmount } from "./money";
+export {
+  toJalali,
+  fromJalali,
+  formatJalali,
+  parseJalali,
+  calendarDateIn,
+} from "./dates";
+export type { JalaliDate } from "./dates";
+export { mediaUrl } from "./media";
+```
+
+**Explicitly not exported, each with the one-line reason a future session would otherwise
+"helpfully" add it back in:**
+
+- **No concrete client, no `apiClient` singleton, no `getApiBaseUrl`.** These are the exact host
+  configuration §13 exists to keep out — a host builds and owns its own.
+- **No `QueryClient` singleton** — only the factory; a singleton is the SSR cache-leak bug
+  `makeQueryClient`'s whole shape exists to prevent (§20).
+- **No `ApiClientContext`** (the React context object itself) — only the provider/hook pair, so a
+  second, incompatible provider can't be hand-built against the same context (§15).
+- **No manager or config-hook shapes** (`NotificationsManager`, `useNotificationsConfig`-style
+  helpers) — those are per-app internals (`APP-DESIGN.md` §12, "Manager & hook conventions"),
+  never appkit's to define or export.
+- **No UI components, including a `share()` helper** — appkit is an SDK contract, not a component
+  library (`CLAUDE.md`'s scope boundary table; restated in §J).
+- **No storage helpers** (`localStorage`/`sessionStorage` wrappers) — nothing in this package
+  reads or writes browser storage, matching the frontend security checklist
+  (`APP-DESIGN.md` §12) and this document's own §13.
+
+**Duplicate-copy safeguard.** A dev-only (stripped in production builds via
+`process.env.NODE_ENV` guard, matching how React itself gates its own dev warnings) registration
+on a `globalThis` symbol keyed by appkit's own package name: if a second copy of appkit's module
+registers the same symbol, both log a console warning naming the failure mode
+(`APP-DESIGN.md` §12's "two copies of appkit... useApiClient would silently return null in half
+the tree"). This converts a silent, hard-to-diagnose `null` into a named, actionable console
+warning at the moment it happens, rather than three layers later inside a manager's `fetch` call
+— the same "name the actual cause" principle behind §15's provider-missing error and §16's
+header-source-failure wrapping. Paired with `isApiError`'s brand check (§17), which stays correct
+even when this safeguard's warning goes unread.
+
+---
+
+## 22. `package.json` shape and the install protocol (H-frontend)
+
+```json
+{
+  "name": "appkit",
+  "version": "1.0.0",
+  "type": "module",
+  "sideEffects": false,
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": { ".": { "types": "./dist/index.d.ts", "import": "./dist/index.js" } },
+  "files": ["dist"],
+  "peerDependencies": {
+    "react": ">=18",
+    "@tanstack/react-query": ">=5"
+  },
+  "devDependencies": {
+    "vitest": "^4.0.0",
+    "msw": "^2.0.0",
+    "@testing-library/react": "^16.0.0",
+    "typescript": "^5.0.0"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "test": "vitest",
+    "lint": "eslint src"
+  }
+}
+```
+
+- **`exports` map declares only `"."`** — same enforcement `APP-DESIGN.md` §12 already
+  establishes for every app SDK, applied to appkit itself: a host importing
+  `appkit/dist/provider` and coupling to an internal path is a mistake Node's resolver refuses to
+  allow, not a convention a host has to remember to respect.
+- **`sideEffects: false`** — every export here is a pure function, a class, or a component with
+  no top-level side effect (the duplicate-copy safeguard in §21 runs inside a module-scope
+  `if (process.env.NODE_ENV !== "production")` guard specifically so the module stays tree-shake
+  and side-effect-free in production terms). This lets a bundler drop unused exports from a
+  host's bundle — a host using only `ApiClientProvider`/`useApiClient` shouldn't pay for
+  `toJalali`'s code in its bundle.
+- **`peerDependencies`: `react >=18`, `@tanstack/react-query >=5` — matching `CLAUDE.md`'s wide-
+  range rule at maximum strictness, the same reasoning `docs/CONTRACT.md` §9 already applied to
+  the backend half.** **Zero runtime `dependencies`** — the property §19's vendoring
+  recommendation exists specifically to protect; a hard dependency here would be the single most
+  widely-propagated dependency in the entire frontend ecosystem, exactly analogous to §9's "an
+  exact pin here is the worst possible place for one" but for *any* dependency at all, not merely
+  a pinned one.
+- **`devDependencies`: Vitest 4.x** (matching `APP-DESIGN.md` §7.7's "an app package's
+  `devDependencies` should track the same major [as the scaffold's own baseline], not an older
+  one" — appkit holds itself to the same rule it documents for every app), MSW for the header-
+  injection and envelope-parsing tests' HTTP-layer mocking, `@testing-library/react` for the
+  hook/provider tests, TypeScript for the build.
+- **`appkit` is a `peerDependency` of every installed app's own SDK, never a regular
+  dependency — and the host installs `appkit` itself explicitly, once, per
+  `APP-DESIGN.md` §12 and `INTEGRATION-GUIDE.md` §2 step 3.** The failure this prevents, stated
+  concretely rather than left as "npm might duplicate it": npm cannot dedupe two different
+  `github:HjtDev/appkit#vX:frontend` specs pulled in transitively by two different installed
+  apps' own `peerDependencies` into a single copy the way it dedupes two identical registry
+  version ranges — two copies means two separate React module instances, which means two
+  separate React contexts, which means the host's one mounted `ApiClientProvider` and one
+  installed app's `useApiClient` call resolve against **different** context instances, and the
+  hook throws (§15) or — if the duplicate-copy safeguard's warning goes unheeded — silently
+  behaves as if no provider were mounted at all in that half of the tree. **Verification step for
+  a host, worth stating in the README directly:** `npm ls appkit` after installing every app
+  should show exactly one resolved copy, not two at different paths.
+- **Version agreement across `pyproject.toml`, `package.json`, and `CHANGELOG.md` under one tag**
+  — `CLAUDE.md` rule 5, restated here because this is the file that would otherwise drift first.
+
+---
+
+## 23. Host wiring (I-frontend)
+
+Joins §8's backend wiring block — together they're what becomes `README.md`'s full config block
+and `INTEGRATION-GUIDE.md` §2 steps 3/11 verbatim once code exists.
+
+```tsx
+// frontend/app/providers.tsx — mounted once, not once per installed app
+"use client";
+
+import { useState, useMemo } from "react";
+import { QueryClientProvider } from "@tanstack/react-query";
+import { ApiClientProvider, makeQueryClient } from "appkit";
+import { apiClient } from "@/lib/api-client";
+import { getAuthHeaders } from "@/lib/auth"; // host's own — appkit knows nothing about it
+
+export function Providers({ children }: { children: React.ReactNode }) {
+  const [queryClient] = useState(() => makeQueryClient());
+
+  // Stable reference — see §15's memoisation contract. An inline array literal here
+  // defeats every installed app's own manager memoisation.
+  const headerSources = useMemo(() => [getAuthHeaders], []);
+
+  return (
+    <QueryClientProvider client={queryClient}>
+      <ApiClientProvider
+        client={apiClient}
+        headerSources={headerSources}
+        basePaths={{
+          // ...entries for each installed app's own README-suggested prefix
+        }}
+      >
+        {children}
+      </ApiClientProvider>
+    </QueryClientProvider>
+  );
+}
+```
+
+```
+# .env — nothing to add for the frontend half either. appkit declares zero required or
+# optional keys of its own, on either half (docs/CONTRACT.md §7).
+```
+
+Two host-side consequences worth stating explicitly, since both change existing scaffold files
+(flagged for the user to apply, not applied here — separate repo):
+
+- **`frontend/lib/query-client.ts` becomes a thin re-export**: `export { makeQueryClient } from
+  "appkit";` — the scaffold's own factory (`query-client.ts:19-37`) and appkit's §20 are, by
+  design, the identical function; once appkit ships, the host should stop maintaining a second
+  copy rather than keep both in sync by hand.
+- **`frontend/lib/api-client.ts` should construct its `ApiError` via appkit's `apiErrorFromEnvelope`
+  (§17) and its own `ApiError` class import, not its locally-declared one** — already flagged in
+  §17's own follow-up note; repeated here because it's the same change this wiring block depends
+  on for `makeQueryClient`'s retry predicate (§20) to recognise the host's own thrown errors via
+  `isApiError`.
+
+---
+
+## J. What appkit deliberately does not contain — both halves
+
+One line of reasoning each, so a future session doesn't re-litigate a settled decision:
+
+- **No custom validation framework.** DRF serializers already do the work; `appkit.validation`
+  (§2.8) adds a thin helper for validating `request.query_params` through a serializer, not a new
+  declaration syntax.
+- **No generic XSS/SQL-injection scanner.** The ORM already prevents SQL injection; string-
+  scanning for `<script>` is a blocklist that provides false confidence, not real protection. The
+  two real pieces are in scope instead: `nh3`-based HTML sanitisation and an ORM lookup-key
+  allowlist (§2.8).
+- **No Celery / `django.tasks` dependency, on either half.** A shared dependency that drags in a
+  task runner forces every consuming app *and* host to care about it, whether or not they need
+  one.
+- **No UI components, including a `share()` helper.** The frontend half is an SDK contract —
+  hooks, a provider, and a fetcher interface — not a component library. Anything UI-shaped
+  belongs in a separate package if it's ever wanted at all.
+- **No client implementation — interface and provider only, restated as the single most
+  important line in this entire frontend contract.** §13 states the boundary; this line exists
+  so the reason appears again, next to every other "deliberately absent" decision, where a future
+  session scanning this list for "what's missing that I should add" sees it in the same place as
+  everything else it must not add.
+- **No retry-on-401 / token refresh, anywhere in `headerSources` or the decorated client
+  (§16).** A real refresh loop needs to know the refresh endpoint, avoid an infinite retry loop
+  on a refresh that itself fails, and dedupe concurrent refreshes triggered by simultaneous
+  in-flight requests — all three are auth-specific knowledge appkit must never have. This is
+  the host's concrete client's responsibility to implement, exactly as `BASE-DESIGN.md` §3
+  already assigns CSRF/credentials handling to the host and not to appkit. **The eventual JWT
+  app's own README must document that refresh belongs in the host's client**, not expect appkit
+  to provide it — noted here so that app's author doesn't reach for a mechanism that was never
+  going to exist.
+
+---
+
+## Cross-half consistency re-read
+
+Both halves of `docs/CONTRACT.md` now exist. Re-read in full against each other, checked point by
+point:
+
+| Check | Result |
+|---|---|
+| The ten `code` values, backend §1 table vs. frontend §17's `ApiErrorCode` union | **Agree**, string for string, same order. Both are now pinned against `error-codes.json` (§19) rather than against each other by hand, closing the exact gap that let "nine" survive uncorrected in five places before session 1. |
+| Envelope key names — `request_id` (backend, §1) vs. `requestId` (frontend, `ApiError`) | **Deliberate, stated divergence, not a bug:** the **wire** shape (`ApiErrorEnvelope.error.request_id`, §17) matches the backend's JSON key exactly, snake_case, because it's the literal bytes on the wire. The **parsed** `ApiError` class exposes `requestId`, camelCase, because it's a TypeScript class following TS naming convention once off the wire — same pattern the scaffold's own `ApiError` already uses today (`api-client.ts:29-54`). No inconsistency: the boundary between the two names is exactly the parse step `apiErrorFromEnvelope` performs. |
+| `truncate` suffix and counting rule, §2.12 (backend) vs. §18 (frontend) | **Agree** — same default suffix, same total-length-including-suffix counting rule, same degenerate-input clamp. Backend counts Python `len()` (codepoints); frontend explicitly uses `Array.from` for the same reason, called out in §18 as the one place a naive port would silently disagree. |
+| `parse_amount`/`parseAmount` numeric-type handling, §2.14 (backend) vs. §18 (frontend) | **Intentional divergence in shape, not intent** — backend rejects `float`, returns `int`; frontend rejects non-integer `number` via `Number.isInteger` and additionally rejects anything beyond `Number.MAX_SAFE_INTEGER` (a ceiling the backend's arbitrary-precision `int` doesn't have). Documented in §18 as a real, caller-facing difference — not swept under "should behave the same," since JS genuinely cannot represent what Python's `int` can. |
+| `format_amount`/`formatAmount` separators, §2.14 vs. §18 | **Agree** — both use a fixed ASCII `,` thousands separator regardless of locale; frontend explicitly avoids `Intl.NumberFormat` for exactly this reason (§18). |
+| `mediaUrl` vs. §2.11's promised counterpart | **Delivered as promised**, with the one addition §2.11 anticipated but didn't fully specify: `baseUrl` is an explicit argument, never read from `NEXT_PUBLIC_API_URL` internally — this is what keeps it inside §13's boundary while still fulfilling §2.11's closing paragraph. |
+| §0 item 6 ("Frontend hooks — Session 2") | **Resolved.** `useApiClient` is confirmed as a contract/DI hook, not a data-fetching hook, per that item's own prediction — no `useX` data-fetching hook exists in appkit itself; every such hook lives in an installed app's own SDK, per `APP-DESIGN.md` §12's "Manager & hook conventions." |
+
+No unresolved inconsistency found between the two halves as written.
+
+*End of contract, both halves. `README.md`'s config block (`APP-DESIGN.md` §8/§12) is generated
+from this document once code exists — not the other way around.*
