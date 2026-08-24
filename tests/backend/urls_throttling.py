@@ -8,9 +8,9 @@ training everyone to ignore a warning that exists to be actionable.
 
 from __future__ import annotations
 
-from rest_framework.views import APIView
 from django.http import HttpResponse
 from django.urls import path
+from rest_framework.views import APIView
 
 
 class _ScopedView(APIView):

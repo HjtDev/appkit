@@ -31,9 +31,7 @@ def test_explicit_page_size_override_is_honoured() -> None:
 
 
 def test_page_size_is_capped_at_max_page_size() -> None:
-    page = DefaultPagination().paginate_queryset(
-        list(range(300)), _drf_request("page_size=1000")
-    )
+    page = DefaultPagination().paginate_queryset(list(range(300)), _drf_request("page_size=1000"))
     assert page is not None
     assert len(page) == 100  # max_page_size, not the requested 1000
 

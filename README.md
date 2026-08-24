@@ -81,24 +81,47 @@ unchanged, only where `RequestIDFilter` comes from:
 from appkit.request_id import RequestIDFilter, request_id_var  # was defined locally
 ```
 
-<!-- STUB — settled in Phase 0: does appkit get an INSTALLED_APPS entry?
+Settled: appkit **does** get an `INSTALLED_APPS` entry — `AppKitConfig.ready()` registers the
+system checks named in `docs/CONTRACT.md` §6 (a host that wires the middleware/exception handler
+wrong fails loudly at `manage.py check`, rather than silently losing request IDs or DRF's
+default error shape).
 
-     Lean: yes, for three reasons — (1) translations: Django only discovers an app's locale/
-     when it's in INSTALLED_APPS; (2) system checks: an AppConfig.ready() that fails loudly if
-     appkit is imported but the middleware/EXCEPTION_HANDLER above isn't wired, versus the
-     alternative of silently degraded behavior (no request IDs, DRF's default error shape) —
-     the strongest argument on its own; (3) future management commands. Cheap to add now,
-     breaking to add to every host's settings.py later. INTEGRATION-GUIDE.md §2 step 5's
-     wiring block gets an INSTALLED_APPS line added once this is confirmed. -->
+```python
+INSTALLED_APPS += ["appkit"]
 
-<!-- STUB — settled in Phase 0: the full APPKIT = {...} settings dict, if any, and its
-     DEFAULTS. -->
+REST_FRAMEWORK["DEFAULT_PAGINATION_CLASS"] = "appkit.pagination.DefaultPagination"
+# No REST_FRAMEWORK["PAGE_SIZE"] needed — DefaultPagination carries its own page_size (25).
+
+# Optional — every key below already defaults to the value shown if omitted entirely.
+APPKIT = {
+    "CACHE_TIMEOUT": 60,                    # appkit.cache / appkit.mixins default, seconds
+    "TRUSTED_PROXY_COUNT": 1,               # appkit.net's trusted X-Forwarded-For hops
+    "MAX_UPLOAD_BYTES": 10 * 1024 * 1024,   # appkit.files' semantic size cap
+    "SITE_URL": "",                         # required only if appkit.media is ever called
+                                             # with no request in scope (a Celery task, a
+                                             # management command) — raises
+                                             # ImproperlyConfigured naming this key the first
+                                             # time that happens, rather than emitting a
+                                             # broken relative URL
+}
+```
 
 ## Testing — pytest fixtures (opt-in)
 
-appkit ships a pytest plugin, `appkit.testing`, providing `api_client`, `user`, `admin_user`,
-`auth_client`, `admin_client`, `frozen_request_id`, `clear_cache`, and the
-`assert_error_envelope(response, *, code, status)` helper (`docs/CONTRACT.md` §2.17).
+appkit ships a pytest plugin, `appkit.testing`, providing `appkit_api_client`, `appkit_user`,
+`appkit_admin_user`, `appkit_auth_client`, `appkit_admin_client`, `appkit_frozen_request_id`,
+`appkit_clear_cache`, and the `appkit_assert_error_envelope(response, *, code, status)` helper
+(`docs/CONTRACT.md` §2.17).
+
+**Every name carries an `appkit_` prefix** — `APP-DESIGN.md` §1.3's namespacing rule applied to
+pytest's fixture registry, which is exactly the kind of shared, flat namespace that rule exists
+for. This isn't theoretical: pytest-django ships its own built-in fixtures literally named
+`admin_user` and `admin_client`, and (verified directly) pytest-django's versions win that name
+collision **silently** wherever `db`/`django_db` is in play — a bare `admin_client` fixture
+parameter returns pytest-django's plain Django `Client`, never appkit's DRF `APIClient`, with no
+warning. Prefixing every name this plugin exposes — not just the two that happen to collide
+today — is what keeps a future pytest-django release, another plugin, or a consuming app's own
+`conftest.py` from silently shadowing the rest.
 
 It is **opt-in, not automatic** — no `pytest11` entry point is registered, on purpose: appkit is
 installed transitively by every host, so auto-loading would inject these fixtures into every
@@ -110,20 +133,18 @@ consuming app's own `pyproject.toml`:
 addopts = "-p appkit.testing ..."
 ```
 
-An app package doing this gets `api_client`/`auth_client`/`user` for free instead of hand-rolling
-a slightly different version of each in its own `conftest.py`.
+An app package doing this gets `appkit_api_client`/`appkit_auth_client`/`appkit_user` for free
+instead of hand-rolling a slightly different version of each in its own `conftest.py`.
 
 ## Required `.env` keys
 
-<!-- STUB — settled in Phase 0. Candidates under discussion, neither decided:
-     - crypto.py's key: BASE-DESIGN.md §3's tools/-vs-appkit table says field-level crypto
-       stays in tools/ permanently, because it wraps the HOST's FERNET_KEY. If appkit ships
-       crypto.py anyway, Phase 0 must decide: does it read an APPKIT_FERNET_KEY from settings
-       (a new required key for every host), or take a key as a call-time argument (no .env
-       key of its own, sidestepping the conflict)? Flagged as an open disagreement with the
-       spec, not resolved here — CLAUDE.md's "when this repo and the spec disagree" rule.
-     - Any key the files.py / dates.py / net.py modules need (a max-upload-size default, a
-       trusted-proxy-count for X-Forwarded-For parsing). -->
+**None.** Settled: `appkit.crypto.Cipher` takes its key as a constructor argument, never from
+Django settings or an environment variable — `docs/CONTRACT.md` §3. Field-level crypto wrapping
+a host's own `FERNET_KEY` stays in the host's `tools/crypto.py` permanently; an app declaring
+`appkit[crypto]` builds a `Cipher` from its own documented `.env` key instead. Every
+configurable value the modules below read (`MAX_UPLOAD_BYTES`, `TRUSTED_PROXY_COUNT`,
+`SITE_URL`, `CACHE_TIMEOUT`) is an optional `APPKIT` **settings** key, not an `.env` key — see
+"Settings" above.
 
 ## URL mounting
 
@@ -136,8 +157,8 @@ Not applicable — appkit ships no models.
 
 ## Exports (backend)
 
-<!-- STUB — settled in Phase 0 / Phase 4-5, exact function signatures. Intended module list,
-     recorded here so Phase 0 starts from a position: -->
+Every module below is complete as of `docs/CONTRACT.md` §2 — exact signatures there, `README.md`
+lists what each provides rather than repeating them verbatim.
 
 | Module | Provides |
 |---|---|
@@ -145,19 +166,19 @@ Not applicable — appkit ships no models.
 | `appkit.mixins` | `CachedListMixin` |
 | `appkit.exceptions` | `standard_exception_handler` + the ten `code` values (`docs/CONTRACT.md` §1) |
 | `appkit.request_id` | `request_id_var`, `RequestIDMiddleware`, `RequestIDFilter` |
-| `appkit.permissions` | `IsAppAdmin` |
-| `appkit.pagination` | a shared default `pagination_class` |
-| `appkit.validation` | a query-param serializer helper, `nh3`-based HTML sanitisation, an ORM lookup-key allowlist |
-| `appkit.files` | magic-byte mimetype validation, size limits, extension/mimetype agreement, image checks |
-| `appkit.net` | real client IP extraction — trusts only the proxy-appended `X-Forwarded-For` entry, never the client-controlled leftmost value |
-| `appkit.media` | media URL absolutisation (`file_url`, `absolute_url`) — this, not `appkit.urls`, is where a media-URL helper lives; appkit exposes no `urlpatterns` at all |
-| `appkit.text` | truncation, Persian/Arabic-Indic digit normalisation |
-| `appkit.dates` | Gregorian↔Jalali conversion |
-| `appkit.money` | price field sanitisation/formatting |
-| `appkit.throttling` | a §1.3 scope-prefix-naming helper |
-| `appkit.conf` | the `APPKIT` settings accessor (internal-but-stable, not re-exported from top-level `appkit`) |
+| `appkit.permissions` | `IsAppAdmin`, `IsObjectOwner` (the IDOR-case permission, `owner_field`-configurable) |
+| `appkit.pagination` | `DefaultPagination` — `page_size=25`, `max_page_size=100` |
+| `appkit.validation` | `validate_query_params`, `sanitize_html`/`strip_html` (`nh3`-based), `ALLOWED_LOOKUPS`/`validate_lookup`/`safe_filter_kwargs` (an ORM lookup-key allowlist — `regex`/`iregex` excluded, a ReDoS vector) |
+| `appkit.files` | `ImageInfo`, `detect_mimetype`, `validate_upload`, `validate_image` — magic-byte mimetype validation, size limits, hardcoded extension/mimetype agreement table, decompression-bomb-aware image dimension checks. `validate_image`'s raster-format path requires the `images` extra |
+| `appkit.net` | `client_ip` — trusts only the proxy-appended `X-Forwarded-For` entry (`APPKIT["TRUSTED_PROXY_COUNT"]`-th from the right), never the client-controlled leftmost value |
+| `appkit.media` | `file_url`, `absolute_url` — media URL absolutisation; this, not `appkit.urls`, is where a media-URL helper lives, since appkit exposes no `urlpatterns` at all |
+| `appkit.text` | `truncate`, `to_english_digits`, `to_persian_digits` — codepoint-aware, matches the frontend half's `truncate` exactly |
+| `appkit.dates` | `to_jalali`, `from_jalali`, `format_jalali`, `parse_jalali` — Gregorian↔Jalali conversion; no third-party type in any signature |
+| `appkit.money` | `parse_amount`, `format_amount` — fixed ASCII `,` grouping, never locale-dependent |
+| `appkit.throttling` | `throttle_scope` — a §1.3 scope-prefix-naming helper |
+| `appkit.conf` | `get_setting`, `UNSET`, `DEFAULTS` (internal-but-stable, not re-exported from top-level `appkit`) |
 | `appkit.crypto` | `Cipher`, `generate_key` — Fernet encryption taking its key at call time. Requires the `crypto` extra; resolved in `docs/CONTRACT.md` §3: appkit reads no `.env`/settings key of its own, ever |
-| `appkit.testing` (pytest plugin, opt-in — see "Testing" above) | `api_client`, `user`, `admin_user`, `auth_client`, `admin_client`, `frozen_request_id`, `clear_cache`, `assert_error_envelope` |
+| `appkit.testing` (pytest plugin, opt-in — see "Testing" above) | `appkit_api_client`, `appkit_user`, `appkit_admin_user`, `appkit_auth_client`, `appkit_admin_client`, `appkit_frozen_request_id`, `appkit_clear_cache`, `appkit_assert_error_envelope`. Every name is `appkit_`-prefixed on purpose — pytest-django ships its own built-in `admin_user`/`admin_client` fixtures, and (verified directly) pytest-django's win that exact name collision silently; the prefix is what keeps this plugin's fixtures from ever landing in that situation |
 
 ## Exports (frontend)
 
@@ -287,7 +308,15 @@ the *source* appkit's own versions are built from, and this repo has no standing
 
 ## Test helpers
 
-<!-- STUB — settled once appkit.testing (the pytest plugin) is built. -->
+See "Testing — pytest fixtures (opt-in)" above for the full fixture/helper list and the
+`appkit_`-prefix naming rationale. Two behaviors worth calling out beyond that list:
+
+- `appkit_user`/`appkit_admin_user` build through `get_user_model().USERNAME_FIELD`
+  **reflectively** — they work against a custom, non-`username`-keyed user model without any
+  extra configuration.
+- `appkit_clear_cache` is deliberately **not** `autouse` — under `pytest -n auto` against a
+  shared cache backend, an autouse cache-clear would clear another xdist worker's in-flight
+  data too.
 
 ## Suggested Jazzmin icon
 

@@ -28,7 +28,7 @@ def test_host_module_import_is_banned(module: str) -> None:
     subject to the real banned-api block rather than the test tree's own exemption.
     """
     probe_source = f"from {module} import something\n"
-    result = subprocess.run(  # noqa: S603
+    result = subprocess.run(
         [
             sys.executable,
             "-m",

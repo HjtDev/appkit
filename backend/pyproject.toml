@@ -141,6 +141,14 @@ warn_unreachable = true
 # backend/ (the settings module lives one level up, outside src/) and `uv run mypy src` fails.
 mypy_path = "..:src"
 
+# jdatetime ships no py.typed marker and no stub package exists on PyPI (verified) — appkit.dates
+# is the only module that imports it, and does so as internal implementation detail only, never
+# in a public signature (docs/CONTRACT.md §2.13), so a blanket ignore here can't leak an Any into
+# any consumer-facing type.
+[[tool.mypy.overrides]]
+module = "jdatetime"
+ignore_missing_imports = true
+
 [tool.django-stubs]
 django_settings_module = "tests.backend.settings"
 
@@ -152,6 +160,24 @@ testpaths = ["../tests/backend"]
 python_files = ["test_*.py"]
 # Coverage gate is 95%, not the usual 85% (CLAUDE.md) — appkit ships complete rather than
 # growing under four installed apps, so its own suite stands in for usage feedback.
+#
+# DO NOT add `-p appkit.testing` to the addopts below. It looks like the obviously-correct
+# dogfooding move — appkit.testing IS meant to be used this way — and that's exactly why this
+# comment exists: someone will try it again. Verified directly, not assumed: a plugin loaded via
+# `-p` in addopts is imported during pytest's early `consider_preparse` phase, BEFORE pytest-cov's
+# own tracer attaches. coverage.py then permanently reports that module (and everything it
+# imports at module scope) as "previously imported but not measured" — measured on this exact
+# codebase: appkit.request_id's coverage dropped from 100% to 42%, and appkit.testing's own from
+# ~95% to 63%, purely from this measurement artefact, with no change in what actually ran or
+# passed. Re-adding `-p appkit.testing` here will silently reproduce both drops and can push the
+# 95% gate to fail depending on what else changed.
+#
+# `tests/backend/test_testing_plugin.py` calls each fixture's own `_fixture_function` directly
+# instead (normal import timing, fully measured) to exercise appkit.testing in-process. Its one
+# subprocess test, `test_reflective_user_fixture_against_a_non_username_user_model`, is what
+# actually proves the real `-p appkit.testing` opt-in path works end to end — its own docstring
+# explains exactly what would fail (and how) if `-p` stopped working, so that proof doesn't
+# depend on this module being in addopts at all.
 addopts = """
   -ra --strict-markers --strict-config
   --cov=appkit --cov-report=term-missing --cov-fail-under=95
@@ -159,6 +185,7 @@ addopts = """
 markers = [
     "slow: excluded from the default run, opt in with -m slow",
     "integration: crosses a real DB boundary rather than mocking it",
+    "requires_extra: needs the crypto and/or images extra installed — deselected on the bare-install leg (-m 'not requires_extra', docs/CONTRACT.md §9's two-leg strategy)",
 ]
 filterwarnings = ["error::DeprecationWarning"]
 

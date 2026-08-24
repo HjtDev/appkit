@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import ClassVar
+
 import pytest
 from django.contrib.auth.models import AnonymousUser, User
 from django.core.exceptions import ImproperlyConfigured
@@ -39,8 +41,8 @@ class _CallCounter:
 class _ListView(CachedListMixin, generics.ListAPIView):
     cache_namespace = "mixin_ns"
     serializer_class = _ItemSerializer
-    permission_classes = [AllowAny]
-    authentication_classes = [_TrustPresetUserAuthentication]
+    permission_classes: ClassVar = [AllowAny]
+    authentication_classes: ClassVar = [_TrustPresetUserAuthentication]
 
     def get_queryset(self) -> list[dict[str, int]]:
         _CallCounter.calls += 1
@@ -49,8 +51,8 @@ class _ListView(CachedListMixin, generics.ListAPIView):
 
 class _NoNamespaceView(CachedListMixin, generics.ListAPIView):
     serializer_class = _ItemSerializer
-    permission_classes = [AllowAny]
-    authentication_classes = []
+    permission_classes: ClassVar = [AllowAny]
+    authentication_classes: ClassVar = []
 
     def get_queryset(self) -> list[dict[str, int]]:
         return []

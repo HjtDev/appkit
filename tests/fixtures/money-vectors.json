@@ -1,0 +1,29 @@
+{
+  "parse": [
+    {"input": "1000", "output": 1000},
+    {"input": "1,000,000", "output": 1000000},
+    {"input": 500, "output": 500},
+    {"input": "0", "output": 0},
+    {"input": "-500", "output": -500},
+    {"input": "-1,234", "output": -1234},
+    {"input": "۱۲۳۴۵", "output": 12345},
+    {"input": "٠١٢٣", "output": 123},
+    {"input": "۱٬۰۰۰٬۰۰۰", "output": 1000000},
+    {"input": "  42  ", "output": 42}
+  ],
+  "parse_errors": [
+    {"input": "abc"},
+    {"input": ""},
+    {"input": "12.5"},
+    {"input": "12 34"},
+    {"input": "twelve"}
+  ],
+  "format": [
+    {"input": 1000000, "currency": "", "output": "1,000,000"},
+    {"input": 1000000, "currency": "IRT", "output": "1,000,000 IRT"},
+    {"input": 0, "currency": "", "output": "0"},
+    {"input": -500, "currency": "", "output": "-500"},
+    {"input": 999, "currency": "", "output": "999"},
+    {"input": 1234567890, "currency": "USD", "output": "1,234,567,890 USD"}
+  ]
+}

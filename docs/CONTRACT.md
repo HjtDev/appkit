@@ -292,7 +292,8 @@ most literally, since Phase 2/3 of the scaffold already worked out its sharp edg
   client can correlate its own request against server logs even on a 500.
 - `RequestIDFilter.filter` **never raises** — logging outside a request cycle (management
   commands, Celery tasks, process startup) must still work, defaulting `record.request_id` to
-  `"-"`. This is the fixture `appkit.testing`'s `frozen_request_id` exists to make assertable.
+  `"-"`. This is the fixture `appkit.testing`'s `appkit_frozen_request_id` exists to make
+  assertable.
 - Belongs near the top of `MIDDLEWARE`, after `SecurityMiddleware`, before anything that logs —
   the ordering `appkit.W002` (§6) checks for.
 
@@ -410,11 +411,16 @@ All **Public.**
 - `strip_html(value)` — removes all tags, returning plain text (`allowed_tags=()`  under the
   hood). For fields that must never contain markup at all (a display name), not fields that may
   contain safe rich text.
-- `ALLOWED_LOOKUPS` — the ORM lookup allowlist: `eq`/exact, `iexact`, `contains`, `icontains`,
-  `startswith`, `endswith`, `gt`, `gte`, `lt`, `lte`, `in`, `isnull`, `range`. **`regex` and
-  `iregex` are excluded on purpose** — a user-controlled regex against Postgres is a ReDoS
-  vector, and this allowlist's whole job is to be the thing an app checks before building a
-  `filter(**kwargs)` from user input.
+- `ALLOWED_LOOKUPS` — the ORM lookup allowlist: `exact`, `iexact`, `contains`, `icontains`,
+  `startswith`, `endswith`, `gt`, `gte`, `lt`, `lte`, `in`, `isnull`, `range`. **Corrected during
+  implementation (Phase 4), flagged as a contradiction rather than a gap:** an earlier draft of
+  this section named the first member "`eq`/exact" — Django has no `eq` lookup at all, so only
+  `exact` goes in the set. Admitting a literal `"eq"` string would let a caller build
+  `filter(x__eq=...)` through this exact allowlist and get a `FieldError` from the ORM, which is
+  precisely the failure mode this function exists to prevent before it reaches `.filter()`.
+  **`regex` and `iregex` are excluded on purpose** — a user-controlled regex against Postgres is
+  a ReDoS vector, and this allowlist's whole job is to be the thing an app checks before building
+  a `filter(**kwargs)` from user input.
 - `validate_lookup(lookup)` — `True`/`False`, no exception; a pure membership check against
   `ALLOWED_LOOKUPS`, split out so an app can compose its own filtering logic without going
   through `safe_filter_kwargs`.
@@ -430,7 +436,12 @@ All **Public.**
   collides with a legitimate allowed field plus a lookup suffix (e.g. `allowed_fields=["created_at"]`
   and `?created_at__gte=x`) must resolve correctly while `?created_at__related__gte=x` (three
   segments) is rejected even though the first segment matches — the parser must count segments,
-  not just check a prefix.
+  not just check a prefix. **Value coercion, decided during implementation (Phase 4) — §2 didn't
+  specify one:** the raw query-param string is coerced per lookup before landing in the returned
+  dict — `in`/`range` split on `,` into a list, `isnull` parsed into a real `bool`, every other
+  lookup passed through as the raw string. The `isnull` coercion specifically is not optional:
+  without it, `?x__isnull=false` would filter as `True` (any non-empty string is truthy in
+  Python), a silent wrong-results bug rather than a style choice.
 
 ### 2.9 `appkit.files`
 
@@ -495,7 +506,14 @@ All **Public.**
   explicitly passed** — SVG is XML, and XML is a script-execution vector (embedded `<script>`,
   external entity references) that magic-byte sniffing alone happily approves as "a valid file
   of the claimed type." Opting in is a real decision an app author makes, not a default.
-  Returns `ImageInfo(width, height, format)` on success.
+  Returns `ImageInfo(width, height, format)` on success. **SVG's `ImageInfo`, decided during
+  implementation (Phase 4) — §2 doesn't specify one:** when `allow_svg=True`, dimensions are
+  read from the SVG root element's `width`/`height` attributes via a bounded regex scan, never
+  by handing the file to Pillow (which doesn't support SVG at all — the `images` extra is never
+  needed on this path). Neither attribute is guaranteed present on a valid SVG (a
+  `viewBox`-only document is legal XML), and either can be malformed; both cases resolve to `0`
+  rather than raising, and `max_dimensions` is skipped when a dimension is `0` rather than being
+  compared against a value known to be meaningless.
 
 ### 2.10 `appkit.net`
 
@@ -534,6 +552,16 @@ out).
   pre-pending fake hops to push their real IP further left) must still resolve to the
   `TRUSTED_PROXY_COUNT`-th-from-the-right entry, proving the count-from-the-right logic isn't
   accidentally count-from-the-left with extra steps.
+- **`TRUSTED_PROXY_COUNT <= 0` falls back to `REMOTE_ADDR` rather than resolving the header at
+  all — decided during implementation (Phase 4), and written down here explicitly because it's
+  security-relevant, not merely a code detail.** §2's original text specifies `parts[-N]` for
+  `N = TRUSTED_PROXY_COUNT` but doesn't state what happens at `N <= 0`. Python's negative-index
+  semantics make this a real trap: `parts[-0]` is `parts[0]` — the leftmost, client-controlled
+  entry this whole function exists to distrust. A host that misconfigures
+  `APPKIT["TRUSTED_PROXY_COUNT"]` to `0` (or a negative value, e.g. via a bad environment-driven
+  default) must not silently start trusting client-supplied IPs; it degrades to the same
+  direct-connection fallback as a too-short header, with the same logged warning. No new
+  settings key — this is a boundary case of the existing one.
 
 ### 2.11 `appkit.media`
 
@@ -672,7 +700,11 @@ functions, zero dependencies) rather than grown into a currency/locale framework
   currency amounts exactly, so a float arriving in a money-parsing function is a defect in the
   caller, not a valid input format this function should paper over. **Raises `ValueError`** for
   a string that isn't a valid integer after normalization (letters, multiple decimal points,
-  empty string).
+  empty string). **Also rejects `bool` with `TypeError`, decided during implementation (Phase
+  4) — §2 is silent on it:** `bool` is an `int` subclass in Python, so `parse_amount(True)`
+  would otherwise silently succeed and return `1`. A caller passing a boolean into a
+  money-parsing function is a defect in the caller in the same way a `float` is — excluding it
+  is the reading consistent with the `float` rule already stated, not a separate carve-out.
 - `format_amount(value, currency="")` — thousands-grouped string (`1000000` → `"1,000,000"`,
   or `"1,000,000 IRT"` with `currency="IRT"`). Never raises for any `int` input, including
   negative values (`-500` → `"-500"`) and `0`.
@@ -734,56 +766,76 @@ both wrong for this ecosystem:
   package's own conftest isn't the rootdir conftest, so this silently wouldn't even work as a
   default for the app packages that need it most.
 
+**Every fixture name below carries an `appkit_` prefix — decided during implementation (Phase
+4), and stated here as a correction to an earlier draft of this section, which used bare names
+(`api_client`, `user`, `admin_user`, `auth_client`, `admin_client`, `frozen_request_id`,
+`clear_cache`).** `APP-DESIGN.md` §1.3's namespacing rule ("anything appkit contributes to a
+shared namespace carries a prefix, no exceptions") applies to pytest's fixture registry exactly
+as much as it applies to cache keys or settings keys — it's the same kind of flat, shared
+namespace, just one pytest owns instead of Django's cache backend. The concrete evidence this
+convention exists to prevent, found during this module's own implementation, not hypothesised:
+pytest-django ships its own built-in fixtures literally named `admin_user` and `admin_client`,
+and empirically (verified directly against the installed pytest-django, not assumed)
+pytest-django's versions win that name collision **silently** wherever `db`/`django_db` is in
+play — requesting bare `admin_user`/`admin_client` returns pytest-django's plain Django
+`User`/`Client`, never appkit's reflectively-built ones, with no warning anywhere. `user` and
+`api_client` hadn't collided with anything at the time of writing — but "hasn't collided yet"
+is precisely the condition the prefix rule exists to guard against, which is why the fix is
+prefixing every name this module exposes, not the two that happened to collide first.
+
 ```python
 @pytest.fixture
-def api_client() -> APIClient: ...
+def appkit_api_client() -> APIClient: ...
 
 @pytest.fixture
-def user(db) -> AbstractBaseUser: ...
+def appkit_user(db) -> AbstractBaseUser: ...
 
 @pytest.fixture
-def admin_user(db) -> AbstractBaseUser: ...
+def appkit_admin_user(db) -> AbstractBaseUser: ...
 
 @pytest.fixture
-def auth_client(api_client, user) -> APIClient: ...
+def appkit_auth_client(appkit_api_client, appkit_user) -> APIClient: ...
 
 @pytest.fixture
-def admin_client(api_client, admin_user) -> APIClient: ...
+def appkit_admin_client(appkit_api_client, appkit_admin_user) -> APIClient: ...
 
 @pytest.fixture
-def frozen_request_id() -> Iterator[str]: ...
+def appkit_frozen_request_id() -> Iterator[str]: ...
 
 @pytest.fixture
-def clear_cache() -> None: ...
+def appkit_clear_cache() -> None: ...
 
-def assert_error_envelope(response: Response, *, code: str, status: int) -> None: ...
+def appkit_assert_error_envelope(response: Response, *, code: str, status: int) -> None: ...
 ```
 
-- `user`/`admin_user` build through `get_user_model().USERNAME_FIELD` **reflectively**, not a
-  hardcoded `create_user(username=...)` call — a host on an email-based custom user model
-  (`USERNAME_FIELD = "email"`, the common case for a fresh Django project in 2026) would break
-  immediately on a fixture that assumes `username`. **Non-obvious failure path, tested directly:**
-  the fixture must be exercised against a settings module using a non-`username`
-  `USERNAME_FIELD` to prove the reflection actually works, not just against the plugin's own
-  default test settings which might happen to use the common case.
-- `clear_cache` is **deliberately not `autouse`**. Under `pytest -n auto` (`pytest-xdist`,
-  `APP-DESIGN.md` §7.6) against a single shared Redis instance, an autouse fixture clearing the
-  cache between every test would clear another xdist worker's in-flight test data too —
-  intermittent, worker-count-dependent failures that are miserable to diagnose. Documented
-  recommendation: use Django's `LocMemCache` for the test settings module (isolated per
-  process) or a distinct Redis DB index per xdist worker if a real cache backend's behaviour is
-  under test.
-- `frozen_request_id` — yields a fixed request-ID string and asserts it's restored to `"-"` (or
-  the prior value) on fixture teardown, making `RequestIDMiddleware`'s reset-in-`finally`
-  contract (§2.4) directly assertable from a consuming app's own tests, not just appkit's.
-- `assert_error_envelope(response, code=..., status=...)` — **addition beyond the session
+- `appkit_user`/`appkit_admin_user` build through `get_user_model().USERNAME_FIELD`
+  **reflectively**, not a hardcoded `create_user(username=...)` call — a host on an email-based
+  custom user model (`USERNAME_FIELD = "email"`, the common case for a fresh Django project in
+  2026) would break immediately on a fixture that assumes `username`. **Non-obvious failure
+  path, tested directly:** the fixture must be exercised against a settings module using a
+  non-`username` `USERNAME_FIELD` to prove the reflection actually works, not just against the
+  plugin's own default test settings which might happen to use the common case.
+- `appkit_clear_cache` is **deliberately not `autouse`**. Under `pytest -n auto`
+  (`pytest-xdist`, `APP-DESIGN.md` §7.6) against a single shared Redis instance, an autouse
+  fixture clearing the cache between every test would clear another xdist worker's in-flight
+  test data too — intermittent, worker-count-dependent failures that are miserable to diagnose.
+  Documented recommendation: use Django's `LocMemCache` for the test settings module (isolated
+  per process) or a distinct Redis DB index per xdist worker if a real cache backend's
+  behaviour is under test.
+- `appkit_frozen_request_id` — yields a fixed request-ID string and asserts it's restored to
+  `"-"` (or the prior value) on fixture teardown, making `RequestIDMiddleware`'s
+  reset-in-`finally` contract (§2.4) directly assertable from a consuming app's own tests, not
+  just appkit's.
+- `appkit_assert_error_envelope(response, code=..., status=...)` — **addition beyond the session
   prompt's inventory**, justified directly by `APP-DESIGN.md` §7.4's minimum test bar applying
   to *every* app: without a shared assertion, nine installed apps hand-roll nine slightly
   different envelope assertions (some checking `details`, some not; some checking `request_id`
   is non-empty, some not), and a real envelope-shape regression in appkit itself would show up
   as nine different flavors of test failure instead of one clear one. Raises the test
   framework's own `AssertionError` with a diff-friendly message on mismatch — same substitutable
-  from `assert` directly, not a bespoke passing/failing type.
+  from `assert` directly, not a bespoke passing/failing type. Prefixed for consistency with the
+  rest of this module's surface even though, as a plain function rather than a fixture, it was
+  never at risk of the same collision.
 
 ---
 
@@ -1140,6 +1192,22 @@ images = ["pillow>=10,<13"]
   appkit's own code quietly making an extra mandatory in practice despite `pyproject.toml`
   saying otherwise.
 
+**The two-leg test strategy is itself part of this contract, not an implementation detail —**
+stated here explicitly so an app consuming `appkit[crypto]`/`appkit[images]` understands that
+appkit's own guarantees about those extras come from a *specifically configured* run, not from
+`uv run pytest` alone:
+
+- **Gate leg (authoritative, ≥95% coverage):** `uv run --extra crypto --extra images pytest`.
+  Extras-dependent tests carry a `requires_extra` pytest marker and import their extra at
+  module level with a plain `import` — never `pytest.importorskip` — so a misconfigured gate
+  run fails loudly (a collection error) rather than silently passing with the security-relevant
+  crypto/image tests absent. A `pytest_configure` guard in `tests/backend/conftest.py` checks
+  both extras are importable before collection even starts, for the same reason.
+- **Bare-install leg (proves the core stands alone):**
+  `uv run --exact pytest -m "not requires_extra" --no-cov`. `--exact` matters: `uv run` syncs
+  *inexactly* by default, so without it a prior gate run's `cryptography`/`pillow` stay
+  installed and this leg silently runs with both extras present anyway.
+
 ### Deliberately not depended on
 
 `drf-spectacular` (every app declares it directly; nothing in appkit introspects an OpenAPI
@@ -1215,7 +1283,7 @@ full of required keys, an *absence* here reads as an oversight unless it's state
 - **Four additions beyond the session prompt's original module inventory — all confirmed and
   built into §2 above, not appended as an afterthought:** `IsObjectOwner` (§2.6),
   `appkit.W004`/the throttle-scope check (§2.15, §6), `to_english_digits`/`to_persian_digits`
-  (§2.12), and `assert_error_envelope` (§2.17). Each maps directly to a specific requirement
+  (§2.12), and `appkit_assert_error_envelope` (§2.17). Each maps directly to a specific requirement
   `APP-DESIGN.md` §7.4 or §9 already places on *every* app, which is the bar an addition to this
   surface has to clear — "convenient" is not that bar; "every app is already required to do this
   and would otherwise reimplement it nine times" is.

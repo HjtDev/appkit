@@ -1,0 +1,817 @@
+{
+  "round_trip": [
+    {
+      "gregorian": "1921-03-21",
+      "jalali": {
+        "year": 1300,
+        "month": 1,
+        "day": 1
+      },
+      "note": "Jalali 1300s — Nowruz 1300"
+    },
+    {
+      "gregorian": "1931-09-23",
+      "jalali": {
+        "year": 1310,
+        "month": 6,
+        "day": 31
+      },
+      "note": "Jalali 1300s — Shahrivar boundary"
+    },
+    {
+      "gregorian": "1942-03-20",
+      "jalali": {
+        "year": 1320,
+        "month": 12,
+        "day": 29
+      },
+      "note": "Jalali 1300s — Esfand 29, non-leap year"
+    },
+    {
+      "gregorian": "1995-03-21",
+      "jalali": {
+        "year": 1374,
+        "month": 1,
+        "day": 1
+      },
+      "note": "Nowruz 1374"
+    },
+    {
+      "gregorian": "1996-03-19",
+      "jalali": {
+        "year": 1374,
+        "month": 12,
+        "day": 29
+      },
+      "note": "Esfand 29, non-leap year 1374"
+    },
+    {
+      "gregorian": "1996-03-20",
+      "jalali": {
+        "year": 1375,
+        "month": 1,
+        "day": 1
+      },
+      "note": "Nowruz 1375"
+    },
+    {
+      "gregorian": "1997-03-19",
+      "jalali": {
+        "year": 1375,
+        "month": 12,
+        "day": 29
+      },
+      "note": "Esfand 29, leap year 1375"
+    },
+    {
+      "gregorian": "1997-03-20",
+      "jalali": {
+        "year": 1375,
+        "month": 12,
+        "day": 30
+      },
+      "note": "Esfand 30, leap year 1375"
+    },
+    {
+      "gregorian": "1997-03-21",
+      "jalali": {
+        "year": 1376,
+        "month": 1,
+        "day": 1
+      },
+      "note": "Nowruz 1376"
+    },
+    {
+      "gregorian": "1998-03-20",
+      "jalali": {
+        "year": 1376,
+        "month": 12,
+        "day": 29
+      },
+      "note": "Esfand 29, non-leap year 1376"
+    },
+    {
+      "gregorian": "1999-03-21",
+      "jalali": {
+        "year": 1378,
+        "month": 1,
+        "day": 1
+      },
+      "note": "Nowruz 1378"
+    },
+    {
+      "gregorian": "2000-01-01",
+      "jalali": {
+        "year": 1378,
+        "month": 10,
+        "day": 11
+      },
+      "note": "Gregorian leap year 2000, Jan 1"
+    },
+    {
+      "gregorian": "2000-02-29",
+      "jalali": {
+        "year": 1378,
+        "month": 12,
+        "day": 10
+      },
+      "note": "Gregorian leap century year 2000"
+    },
+    {
+      "gregorian": "2000-03-19",
+      "jalali": {
+        "year": 1378,
+        "month": 12,
+        "day": 29
+      },
+      "note": "Esfand 29, non-leap year 1378"
+    },
+    {
+      "gregorian": "2000-03-20",
+      "jalali": {
+        "year": 1379,
+        "month": 1,
+        "day": 1
+      },
+      "note": "Nowruz 1379"
+    },
+    {
+      "gregorian": "2001-03-19",
+      "jalali": {
+        "year": 1379,
+        "month": 12,
+        "day": 29
+      },
+      "note": "Esfand 29, leap year 1379"
+    },
+    {
+      "gregorian": "2001-03-20",
+      "jalali": {
+        "year": 1379,
+        "month": 12,
+        "day": 30
+      },
+      "note": "Esfand 30, leap year 1379"
+    },
+    {
+      "gregorian": "2001-03-21",
+      "jalali": {
+        "year": 1380,
+        "month": 1,
+        "day": 1
+      },
+      "note": "Nowruz 1380"
+    },
+    {
+      "gregorian": "2002-03-20",
+      "jalali": {
+        "year": 1380,
+        "month": 12,
+        "day": 29
+      },
+      "note": "Esfand 29, non-leap year 1380"
+    },
+    {
+      "gregorian": "2003-03-21",
+      "jalali": {
+        "year": 1382,
+        "month": 1,
+        "day": 1
+      },
+      "note": "Nowruz 1382"
+    },
+    {
+      "gregorian": "2004-03-19",
+      "jalali": {
+        "year": 1382,
+        "month": 12,
+        "day": 29
+      },
+      "note": "Esfand 29, non-leap year 1382"
+    },
+    {
+      "gregorian": "2004-03-20",
+      "jalali": {
+        "year": 1383,
+        "month": 1,
+        "day": 1
+      },
+      "note": "Nowruz 1383"
+    },
+    {
+      "gregorian": "2005-03-19",
+      "jalali": {
+        "year": 1383,
+        "month": 12,
+        "day": 29
+      },
+      "note": "Esfand 29, leap year 1383"
+    },
+    {
+      "gregorian": "2005-03-20",
+      "jalali": {
+        "year": 1383,
+        "month": 12,
+        "day": 30
+      },
+      "note": "Esfand 30, leap year 1383"
+    },
+    {
+      "gregorian": "2005-03-21",
+      "jalali": {
+        "year": 1384,
+        "month": 1,
+        "day": 1
+      },
+      "note": "Nowruz 1384"
+    },
+    {
+      "gregorian": "2006-03-20",
+      "jalali": {
+        "year": 1384,
+        "month": 12,
+        "day": 29
+      },
+      "note": "Esfand 29, non-leap year 1384"
+    },
+    {
+      "gregorian": "2007-03-21",
+      "jalali": {
+        "year": 1386,
+        "month": 1,
+        "day": 1
+      },
+      "note": "Nowruz 1386"
+    },
+    {
+      "gregorian": "2008-03-19",
+      "jalali": {
+        "year": 1386,
+        "month": 12,
+        "day": 29
+      },
+      "note": "Esfand 29, non-leap year 1386"
+    },
+    {
+      "gregorian": "2008-03-20",
+      "jalali": {
+        "year": 1387,
+        "month": 1,
+        "day": 1
+      },
+      "note": "Nowruz 1387"
+    },
+    {
+      "gregorian": "2009-03-19",
+      "jalali": {
+        "year": 1387,
+        "month": 12,
+        "day": 29
+      },
+      "note": "Esfand 29, leap year 1387"
+    },
+    {
+      "gregorian": "2009-03-20",
+      "jalali": {
+        "year": 1387,
+        "month": 12,
+        "day": 30
+      },
+      "note": "Esfand 30, leap year 1387"
+    },
+    {
+      "gregorian": "2009-03-21",
+      "jalali": {
+        "year": 1388,
+        "month": 1,
+        "day": 1
+      },
+      "note": "Nowruz 1388"
+    },
+    {
+      "gregorian": "2010-03-20",
+      "jalali": {
+        "year": 1388,
+        "month": 12,
+        "day": 29
+      },
+      "note": "Esfand 29, non-leap year 1388"
+    },
+    {
+      "gregorian": "2011-03-21",
+      "jalali": {
+        "year": 1390,
+        "month": 1,
+        "day": 1
+      },
+      "note": "Nowruz 1390"
+    },
+    {
+      "gregorian": "2012-03-19",
+      "jalali": {
+        "year": 1390,
+        "month": 12,
+        "day": 29
+      },
+      "note": "Esfand 29, non-leap year 1390"
+    },
+    {
+      "gregorian": "2012-03-20",
+      "jalali": {
+        "year": 1391,
+        "month": 1,
+        "day": 1
+      },
+      "note": "Nowruz 1391"
+    },
+    {
+      "gregorian": "2013-03-19",
+      "jalali": {
+        "year": 1391,
+        "month": 12,
+        "day": 29
+      },
+      "note": "Esfand 29, leap year 1391"
+    },
+    {
+      "gregorian": "2013-03-20",
+      "jalali": {
+        "year": 1391,
+        "month": 12,
+        "day": 30
+      },
+      "note": "Esfand 30, leap year 1391"
+    },
+    {
+      "gregorian": "2013-03-21",
+      "jalali": {
+        "year": 1392,
+        "month": 1,
+        "day": 1
+      },
+      "note": "Nowruz 1392"
+    },
+    {
+      "gregorian": "2014-03-20",
+      "jalali": {
+        "year": 1392,
+        "month": 12,
+        "day": 29
+      },
+      "note": "Esfand 29, non-leap year 1392"
+    },
+    {
+      "gregorian": "2015-03-21",
+      "jalali": {
+        "year": 1394,
+        "month": 1,
+        "day": 1
+      },
+      "note": "Nowruz 1394"
+    },
+    {
+      "gregorian": "2016-03-19",
+      "jalali": {
+        "year": 1394,
+        "month": 12,
+        "day": 29
+      },
+      "note": "Esfand 29, non-leap year 1394"
+    },
+    {
+      "gregorian": "2016-03-20",
+      "jalali": {
+        "year": 1395,
+        "month": 1,
+        "day": 1
+      },
+      "note": "Nowruz 1395"
+    },
+    {
+      "gregorian": "2017-03-19",
+      "jalali": {
+        "year": 1395,
+        "month": 12,
+        "day": 29
+      },
+      "note": "Esfand 29, leap year 1395"
+    },
+    {
+      "gregorian": "2017-03-20",
+      "jalali": {
+        "year": 1395,
+        "month": 12,
+        "day": 30
+      },
+      "note": "Esfand 30, leap year 1395"
+    },
+    {
+      "gregorian": "2017-03-21",
+      "jalali": {
+        "year": 1396,
+        "month": 1,
+        "day": 1
+      },
+      "note": "Nowruz 1396"
+    },
+    {
+      "gregorian": "2018-03-20",
+      "jalali": {
+        "year": 1396,
+        "month": 12,
+        "day": 29
+      },
+      "note": "Esfand 29, non-leap year 1396"
+    },
+    {
+      "gregorian": "2018-03-21",
+      "jalali": {
+        "year": 1397,
+        "month": 1,
+        "day": 1
+      },
+      "note": "Nowruz 1397"
+    },
+    {
+      "gregorian": "2019-03-21",
+      "jalali": {
+        "year": 1398,
+        "month": 1,
+        "day": 1
+      },
+      "note": "Nowruz 1398"
+    },
+    {
+      "gregorian": "2020-03-19",
+      "jalali": {
+        "year": 1398,
+        "month": 12,
+        "day": 29
+      },
+      "note": "Esfand 29, non-leap year 1398"
+    },
+    {
+      "gregorian": "2020-03-20",
+      "jalali": {
+        "year": 1399,
+        "month": 1,
+        "day": 1
+      },
+      "note": "Nowruz 1399"
+    },
+    {
+      "gregorian": "2021-03-19",
+      "jalali": {
+        "year": 1399,
+        "month": 12,
+        "day": 29
+      },
+      "note": "Esfand 29, leap year 1399"
+    },
+    {
+      "gregorian": "2021-03-20",
+      "jalali": {
+        "year": 1399,
+        "month": 12,
+        "day": 30
+      },
+      "note": "Esfand 30, leap year 1399"
+    },
+    {
+      "gregorian": "2021-03-21",
+      "jalali": {
+        "year": 1400,
+        "month": 1,
+        "day": 1
+      },
+      "note": "Nowruz 1400"
+    },
+    {
+      "gregorian": "2021-09-22",
+      "jalali": {
+        "year": 1400,
+        "month": 6,
+        "day": 31
+      },
+      "note": "last day of Shahrivar (31-day month), 1400"
+    },
+    {
+      "gregorian": "2021-09-23",
+      "jalali": {
+        "year": 1400,
+        "month": 7,
+        "day": 1
+      },
+      "note": "first day of Mehr (30-day month), 1400"
+    },
+    {
+      "gregorian": "2021-10-22",
+      "jalali": {
+        "year": 1400,
+        "month": 7,
+        "day": 30
+      },
+      "note": "last day of Mehr (30-day month), 1400"
+    },
+    {
+      "gregorian": "2022-03-20",
+      "jalali": {
+        "year": 1400,
+        "month": 12,
+        "day": 29
+      },
+      "note": "Esfand 29, non-leap year 1400"
+    },
+    {
+      "gregorian": "2022-03-21",
+      "jalali": {
+        "year": 1401,
+        "month": 1,
+        "day": 1
+      },
+      "note": "Nowruz 1401"
+    },
+    {
+      "gregorian": "2023-03-21",
+      "jalali": {
+        "year": 1402,
+        "month": 1,
+        "day": 1
+      },
+      "note": "Nowruz 1402"
+    },
+    {
+      "gregorian": "2024-02-29",
+      "jalali": {
+        "year": 1402,
+        "month": 12,
+        "day": 10
+      },
+      "note": "Gregorian leap year 2024"
+    },
+    {
+      "gregorian": "2024-03-19",
+      "jalali": {
+        "year": 1402,
+        "month": 12,
+        "day": 29
+      },
+      "note": "Esfand 29, non-leap year 1402"
+    },
+    {
+      "gregorian": "2024-03-20",
+      "jalali": {
+        "year": 1403,
+        "month": 1,
+        "day": 1
+      },
+      "note": "Nowruz 1403"
+    },
+    {
+      "gregorian": "2024-09-21",
+      "jalali": {
+        "year": 1403,
+        "month": 6,
+        "day": 31
+      },
+      "note": "last day of Shahrivar (31-day month), 1403"
+    },
+    {
+      "gregorian": "2024-09-22",
+      "jalali": {
+        "year": 1403,
+        "month": 7,
+        "day": 1
+      },
+      "note": "first day of Mehr (30-day month), 1403"
+    },
+    {
+      "gregorian": "2024-10-21",
+      "jalali": {
+        "year": 1403,
+        "month": 7,
+        "day": 30
+      },
+      "note": "last day of Mehr (30-day month), 1403"
+    },
+    {
+      "gregorian": "2025-03-19",
+      "jalali": {
+        "year": 1403,
+        "month": 12,
+        "day": 29
+      },
+      "note": "Esfand 29, leap year 1403"
+    },
+    {
+      "gregorian": "2025-03-20",
+      "jalali": {
+        "year": 1403,
+        "month": 12,
+        "day": 30
+      },
+      "note": "Esfand 30, leap year 1403"
+    },
+    {
+      "gregorian": "2025-03-21",
+      "jalali": {
+        "year": 1404,
+        "month": 1,
+        "day": 1
+      },
+      "note": "Nowruz 1404"
+    },
+    {
+      "gregorian": "2026-03-20",
+      "jalali": {
+        "year": 1404,
+        "month": 12,
+        "day": 29
+      },
+      "note": "Esfand 29, non-leap year 1404"
+    },
+    {
+      "gregorian": "2026-03-21",
+      "jalali": {
+        "year": 1405,
+        "month": 1,
+        "day": 1
+      },
+      "note": "Nowruz 1405"
+    },
+    {
+      "gregorian": "2027-03-21",
+      "jalali": {
+        "year": 1406,
+        "month": 1,
+        "day": 1
+      },
+      "note": "Nowruz 1406"
+    },
+    {
+      "gregorian": "2028-03-20",
+      "jalali": {
+        "year": 1407,
+        "month": 1,
+        "day": 1
+      },
+      "note": "Nowruz 1407"
+    },
+    {
+      "gregorian": "2029-03-20",
+      "jalali": {
+        "year": 1408,
+        "month": 1,
+        "day": 1
+      },
+      "note": "Nowruz 1408"
+    },
+    {
+      "gregorian": "2030-03-21",
+      "jalali": {
+        "year": 1409,
+        "month": 1,
+        "day": 1
+      },
+      "note": "Nowruz 1409"
+    },
+    {
+      "gregorian": "2071-03-21",
+      "jalali": {
+        "year": 1450,
+        "month": 1,
+        "day": 1
+      },
+      "note": "Jalali 1450s — Nowruz 1450"
+    },
+    {
+      "gregorian": "2076-09-22",
+      "jalali": {
+        "year": 1455,
+        "month": 7,
+        "day": 1
+      },
+      "note": "Jalali 1450s — Mehr 1"
+    },
+    {
+      "gregorian": "2082-03-19",
+      "jalali": {
+        "year": 1460,
+        "month": 12,
+        "day": 29
+      },
+      "note": "Jalali 1450s — Esfand 29, non-leap year"
+    },
+    {
+      "gregorian": "2100-03-01",
+      "jalali": {
+        "year": 1478,
+        "month": 12,
+        "day": 11
+      },
+      "note": "day after where Feb 29 2100 would be — 2100 is NOT a Gregorian leap year"
+    }
+  ],
+  "format": [
+    {
+      "jalali": {
+        "year": 1403,
+        "month": 1,
+        "day": 1
+      },
+      "fmt": "%Y/%m/%d",
+      "expected": "1403/01/01"
+    },
+    {
+      "jalali": {
+        "year": 1403,
+        "month": 1,
+        "day": 1
+      },
+      "fmt": "%Y-%m-%d",
+      "expected": "1403-01-01"
+    },
+    {
+      "jalali": {
+        "year": 1399,
+        "month": 12,
+        "day": 30
+      },
+      "fmt": "%d/%m/%Y",
+      "expected": "30/12/1399"
+    },
+    {
+      "jalali": {
+        "year": 1,
+        "month": 1,
+        "day": 1
+      },
+      "fmt": "%Y/%m/%d",
+      "expected": "0001/01/01"
+    }
+  ],
+  "parse": [
+    {
+      "value": "1403/01/01",
+      "fmt": "%Y/%m/%d",
+      "jalali": {
+        "year": 1403,
+        "month": 1,
+        "day": 1
+      }
+    },
+    {
+      "value": "۱۴۰۳/۰۱/۰۱",
+      "fmt": "%Y/%m/%d",
+      "jalali": {
+        "year": 1403,
+        "month": 1,
+        "day": 1
+      }
+    },
+    {
+      "value": "1403-01-01",
+      "fmt": "%Y-%m-%d",
+      "jalali": {
+        "year": 1403,
+        "month": 1,
+        "day": 1
+      }
+    },
+    {
+      "value": "٠١/٠١/١٤٠٣",
+      "fmt": "%d/%m/%Y",
+      "jalali": {
+        "year": 1403,
+        "month": 1,
+        "day": 1
+      }
+    }
+  ],
+  "invalid": [
+    {
+      "year": 1404,
+      "month": 12,
+      "day": 30,
+      "note": "Esfand 30 in a non-leap year"
+    },
+    {
+      "year": 1403,
+      "month": 7,
+      "day": 31,
+      "note": "day 31 in a 30-day month (Mehr)"
+    },
+    {
+      "year": 1403,
+      "month": 13,
+      "day": 1,
+      "note": "month 13 does not exist"
+    },
+    {
+      "year": 1403,
+      "month": 1,
+      "day": 32,
+      "note": "day 32 in a 31-day month"
+    }
+  ]
+}
