@@ -94,6 +94,25 @@ from appkit.request_id import RequestIDFilter, request_id_var  # was defined loc
 <!-- STUB — settled in Phase 0: the full APPKIT = {...} settings dict, if any, and its
      DEFAULTS. -->
 
+## Testing — pytest fixtures (opt-in)
+
+appkit ships a pytest plugin, `appkit.testing`, providing `api_client`, `user`, `admin_user`,
+`auth_client`, `admin_client`, `frozen_request_id`, `clear_cache`, and the
+`assert_error_envelope(response, *, code, status)` helper (`docs/CONTRACT.md` §2.17).
+
+It is **opt-in, not automatic** — no `pytest11` entry point is registered, on purpose: appkit is
+installed transitively by every host, so auto-loading would inject these fixtures into every
+consuming app's test namespace whether or not it asked for them. Wire it up explicitly in the
+consuming app's own `pyproject.toml`:
+
+```toml
+[tool.pytest.ini_options]
+addopts = "-p appkit.testing ..."
+```
+
+An app package doing this gets `api_client`/`auth_client`/`user` for free instead of hand-rolling
+a slightly different version of each in its own `conftest.py`.
+
 ## Required `.env` keys
 
 <!-- STUB — settled in Phase 0. Candidates under discussion, neither decided:
@@ -131,12 +150,14 @@ Not applicable — appkit ships no models.
 | `appkit.validation` | a query-param serializer helper, `nh3`-based HTML sanitisation, an ORM lookup-key allowlist |
 | `appkit.files` | magic-byte mimetype validation, size limits, extension/mimetype agreement, image checks |
 | `appkit.net` | real client IP extraction — trusts only the proxy-appended `X-Forwarded-For` entry, never the client-controlled leftmost value |
-| `appkit.text` | truncation |
+| `appkit.media` | media URL absolutisation (`file_url`, `absolute_url`) — this, not `appkit.urls`, is where a media-URL helper lives; appkit exposes no `urlpatterns` at all |
+| `appkit.text` | truncation, Persian/Arabic-Indic digit normalisation |
 | `appkit.dates` | Gregorian↔Jalali conversion |
 | `appkit.money` | price field sanitisation/formatting |
 | `appkit.throttling` | a §1.3 scope-prefix-naming helper |
-| `appkit.testing` (pytest plugin) | `api_client`, `auth_client`, `user` fixtures |
-| — | `crypto.py` — **open**, see ".env keys" above |
+| `appkit.conf` | the `APPKIT` settings accessor (internal-but-stable, not re-exported from top-level `appkit`) |
+| `appkit.crypto` | `Cipher`, `generate_key` — Fernet encryption taking its key at call time. Requires the `crypto` extra; resolved in `docs/CONTRACT.md` §3: appkit reads no `.env`/settings key of its own, ever |
+| `appkit.testing` (pytest plugin, opt-in — see "Testing" above) | `api_client`, `user`, `admin_user`, `auth_client`, `admin_client`, `frozen_request_id`, `clear_cache`, `assert_error_envelope` |
 
 ## Exports (frontend)
 

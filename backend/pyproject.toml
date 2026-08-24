@@ -1,0 +1,169 @@
+[build-system]
+# setuptools-scm deliberately NOT included here (APP-DESIGN.md §3.1 declares it but never
+# wires it up — no `dynamic = ["version"]`, no [tool.setuptools_scm] table — so it would be
+# dead weight, and it would fight CLAUDE.md's "pyproject.toml/package.json/CHANGELOG.md agree"
+# rule once all three files exist).
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "appkit"
+# 0.x = no stability guarantee while the public surface (docs/CONTRACT.md) is still being
+# written into code. From Phase 5 onward this must match frontend/package.json and
+# CHANGELOG.md; CI's version-lockstep job enforces it. Bumped to 1.0.0 once, deliberately,
+# at Phase 8 — not incrementally per phase, since nothing consumes the intermediate numbers.
+version = "0.1.0"
+description = "Shared Django + DRF foundation every app package and host in this ecosystem depends on — cache, mixins, error envelope, request-ID plumbing, and the HttpClient/provider contract. Not an installable feature; the thing every other app is built on."
+requires-python = ">=3.13"
+license = "MIT"
+
+# appkit is the single most widely shared dependency in the entire ecosystem (docs/CONTRACT.md
+# §9) — an exact pin here is the worst possible place for one. Every range below is verified
+# against PyPI/OSV.dev in docs/CONTRACT.md §9, not guessed.
+dependencies = [
+    "django>=5.2,<7.0",
+    "djangorestframework>=3.15,<4.0",
+    # nh3 is a HARD dependency, not an extra, on purpose: an optional HTML sanitiser is a
+    # sanitiser some app skips, and skipping it is a stored-XSS bug waiting to happen.
+    "nh3>=0.2,<1.0",
+    # puremagic over python-magic (needs system libmagic, absent from slim/Alpine images —
+    # unacceptable for a dependency installed into an arbitrary host) and over filetype
+    # (effectively unmaintained since 2022).
+    "puremagic>=2,<3",
+    # Pulls in jalali-core>=1.0 transitively (pure Python, ~10 KB, zero further deps) —
+    # named explicitly here per docs/CONTRACT.md §9 so `uv tree` doesn't surprise anyone.
+    "jdatetime>=5,<7",
+]
+
+# Extras = features a CONSUMER opts into, installed with appkit[crypto] / appkit[images].
+# cryptography (42 lifetime OSV advisories) and pillow (153) are kept optional specifically
+# because of that advisory count — every hard dependency above has zero. A missing extra must
+# fail with an actionable "install with appkit[crypto]" message, never a bare ImportError
+# (docs/CONTRACT.md §9) — enforced by importing them lazily inside appkit.crypto /
+# appkit.files, never at module top level.
+[project.optional-dependencies]
+crypto = ["cryptography>=42,<51"]
+images = ["pillow>=10,<13"]
+
+# PEP 735 groups = tooling for developing appkit ITSELF. Never installed by a consumer, never
+# published, not visible to a host at all.
+#
+# `pytest` is deliberately absent from BOTH `dependencies` and any extra, even though
+# appkit.testing (the pytest plugin, docs/CONTRACT.md §2.17) imports it at module scope: the
+# plugin only ever loads via `-p appkit.testing` from inside an already-running pytest
+# process, where pytest is present by definition. Making it a hard/extra dependency would put
+# a test framework in every host's production image for a module no host imports directly.
+# (Gap in docs/CONTRACT.md §9, which never places pytest — resolved here.)
+#
+# No factory-boy: appkit ships no models, so APP-DESIGN.md §7.3's factories.py surface does
+# not apply (docs/CONTRACT.md §10).
+[dependency-groups]
+dev = [
+    "ruff>=0.12",
+    "mypy>=1.14",
+    "django-stubs[compatible-mypy]>=5.1",
+    "djangorestframework-stubs>=3.15",
+    "pre-commit>=4.0",
+]
+test = [
+    "pytest>=8.3",
+    "pytest-django>=4.9",
+    "pytest-cov>=6.0",
+    "pytest-xdist>=3.6",
+    "psycopg[binary]>=3.2",          # tests run on Postgres, APP-DESIGN.md §7.5
+]
+
+[tool.uv]
+default-groups = ["dev", "test"]     # `uv sync` gives a contributor everything
+
+[tool.setuptools]
+# Package data (locale/) is not .py, so it silently doesn't ship without this — paired with
+# MANIFEST.in. APP-DESIGN.md §2's "Package data must be declared" note.
+include-package-data = true
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+# ---------------------------------------------------------------- ruff
+[tool.ruff]
+line-length = 100
+target-version = "py313"
+src = ["src", "../tests"]
+
+[tool.ruff.lint]
+select = [
+    "E", "W",     # pycodestyle
+    "F",          # pyflakes
+    "I",          # isort
+    "UP",         # pyupgrade
+    "B",          # bugbear
+    "DJ",         # flake8-django
+    "S",          # bandit — security
+    "TID",        # tidy-imports (used to enforce the host-boundary rule, see below)
+    "RUF",
+]
+ignore = ["S101"]  # assert is fine in tests
+
+[tool.ruff.lint.per-file-ignores]
+"../tests/**" = ["S", "TID251"]
+
+[tool.ruff.lint.flake8-tidy-imports]
+ban-relative-imports = "parents"
+
+# --- Host modules. THE rule that actually bites for this package (CLAUDE.md rule 2). An app
+# package cannot assume a host's internals exist at a stable import path (APP-DESIGN.md §4).
+# Structural for appkit specifically: appkit IS what tools.* moves into (BASE-DESIGN.md §3),
+# so importing back would also be circular.
+[tool.ruff.lint.flake8-tidy-imports.banned-api]
+"tools".msg = "appkit must never import host modules — APP-DESIGN.md §4. appkit IS what tools.* moves into."
+"core".msg = "appkit must never import host modules — APP-DESIGN.md §4."
+"config".msg = "appkit must never import host modules — APP-DESIGN.md §4."
+
+# --- Sibling app packages: currently an EMPTY SET. appkit is app package #1, so there is no
+# sibling to ban yet. Add one line per app as each is created:
+#   "<app>_app".msg = "App packages must never import each other — see APP-DESIGN.md §6."
+#
+# appkit itself is NEVER added to any app's banned-api list — it is a declared dependency
+# every app is expected to import (APP-DESIGN.md §1.1's named exception), not a sibling the
+# rule exists to keep out.
+#
+# No factories entry either: appkit ships no models, so no factories.py (docs/CONTRACT.md
+# §10) — APP-DESIGN.md §7.3's third public test surface does not apply here.
+
+# ---------------------------------------------------------------- mypy
+[tool.mypy]
+python_version = "3.13"
+strict = true
+plugins = ["mypy_django_plugin.main", "mypy_drf_plugin.main"]
+warn_unreachable = true
+# NOT in APP-DESIGN.md §3.1's example. Without it, [tool.django-stubs]'s
+# django_settings_module = "tests.backend.settings" is unresolvable when mypy runs from
+# backend/ (the settings module lives one level up, outside src/) and `uv run mypy src` fails.
+mypy_path = "..:src"
+
+[tool.django-stubs]
+django_settings_module = "tests.backend.settings"
+
+# ---------------------------------------------------------------- pytest
+[tool.pytest.ini_options]
+DJANGO_SETTINGS_MODULE = "tests.backend.settings"
+pythonpath = ["src", ".."]
+testpaths = ["../tests/backend"]
+python_files = ["test_*.py"]
+# Coverage gate is 95%, not the usual 85% (CLAUDE.md) — appkit ships complete rather than
+# growing under four installed apps, so its own suite stands in for usage feedback.
+# NOTE: at the end of Phase 1 this suite has zero real tests, so `uv run pytest` fails the
+# coverage gate — expected, not a regression; Phase 1's verification runs ruff/mypy/build,
+# not the full pytest gate.
+addopts = """
+  -ra --strict-markers --strict-config
+  --cov=appkit --cov-report=term-missing --cov-fail-under=95
+"""
+markers = [
+    "slow: excluded from the default run, opt in with -m slow",
+    "integration: crosses a real DB boundary rather than mocking it",
+]
+filterwarnings = ["error::DeprecationWarning"]
+
+[tool.coverage.run]
+omit = ["*/tests/*"]

@@ -174,6 +174,22 @@ Create the repo structure from §2 exactly, then:
 Run `uv sync`, then `uv build`, and paste both outputs.
 ```
 
+**appkit's pytest fixtures are opt-in, not automatic.** appkit ships `api_client`, `user`,
+`admin_user`, `auth_client`, `admin_client`, `frozen_request_id`, `clear_cache`, and
+`assert_error_envelope` via a pytest plugin (`appkit.testing`) with no `pytest11` entry point —
+loading it automatically for every host the moment appkit is installed (which is always,
+transitively) was considered and rejected (`appkit/docs/CONTRACT.md` §2.17). Wire it up in this
+app's own `pyproject.toml`:
+
+```toml
+[tool.pytest.ini_options]
+addopts = "-p appkit.testing ..."
+```
+
+Do this instead of hand-rolling a slightly different `api_client`/`auth_client`/`user` in this
+app's own `tests/backend/conftest.py` — the shared fixtures exist precisely so nine installed
+apps don't each reinvent them slightly differently.
+
 **Verify:** `uv sync` and `uv build` both succeed; `dependencies` uses ranges, not `==`, including
 on `appkit`.
 

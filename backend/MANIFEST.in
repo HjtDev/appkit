@@ -1,0 +1,7 @@
+# Ships locale/ in the wheel/sdist — not .py files, so no build backend includes them by
+# default (APP-DESIGN.md §2). Paired with include-package-data = true in pyproject.toml.
+#
+# No templates/, no static/: docs/CONTRACT.md never affirmatively commits appkit to shipping
+# either (it commits only to locale/, §5) — appkit has no views, no rendering, and is
+# explicitly "not a component library" (docs/CONTRACT.md §J).
+recursive-include src/appkit/locale *.po *.mo
