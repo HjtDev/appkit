@@ -165,11 +165,15 @@ All **Public**.
 - `invalidate_namespace(namespace)` — bumps and returns the new version. Never raises (calls
   `namespace_version` first to guarantee the key exists before `cache.incr`).
 - `build_cache_key(namespace, *parts)` — `namespace:version:part1:...`; parts longer than 40
-  chars or containing anything outside `[A-Za-z0-9\-_:.]` are hashed (`sha256`, first 16 hex
-  chars) rather than embedded raw. **Failure path to test:** a part containing a cache-backend
-  delimiter (`:`) or something absurdly long (a raw user search query) must never blow up key
-  length or let a delimiter smuggle a second segment into the key — this is the "user-controlled
-  key fragment is a real Redis footgun" the session prompt calls out by name. Never raises.
+  chars or containing anything outside `[A-Za-z0-9\-_.]` are hashed (`sha256`, first 16 hex
+  chars) rather than embedded raw. **`:` is deliberately excluded from the safe set**, unlike
+  the scaffold's equivalent charset — it's the join delimiter used one line above, so treating
+  it as "safe" inside a part would let a part embed it raw and forge extra
+  `namespace:version:...` segments, exactly contradicting the next sentence. **Failure path to
+  test:** a part containing a cache-backend delimiter (`:`) or something absurdly long (a raw
+  user search query) must never blow up key length or let a delimiter smuggle a second segment
+  into the key — this is the "user-controlled key fragment is a real Redis footgun" the session
+  prompt calls out by name. Never raises.
 - `cached_call(key, timeout, producer)` — get-or-set; `producer` runs at most once per miss.
   **Non-obvious failure path:** a `producer` returning `None` is never actually cached — Django's
   `.get()` can't distinguish "miss" from "cached `None`". Documented behaviour, not a bug;
@@ -692,6 +696,12 @@ here rather than duplicated as a second export. It walks every view reachable fr
 typo'd `throttle_scope` fails open, silently," since DRF only raises at request time, once per
 request, never at startup.
 
+**Complementary with W004, not a definition of it:** `throttle_scope()` enforces the naming
+*format* at the point of declaration; W004 checks *registration* only and is indifferent to
+format (it never rejects a scope for being unprefixed, hyphenated, or otherwise not something
+`throttle_scope()` would itself produce — a host using DRF's own built-in `anon`/`user` scopes
+must not warn). Neither check substitutes for the other.
+
 ### 2.16 `appkit.conf`
 
 ```python
@@ -933,7 +943,10 @@ coverage.** Reliably detected: `throttle_scope` as a class attribute on a class-
 via `pattern.callback.view_class` or `.cls` (DRF's `as_view()` sets both), including
 `@api_view`-decorated function views (DRF wraps these in a real class). **Not detectable, and not
 attempted:** a scope assigned at runtime inside `initial()`/`get_throttles()`, a viewset choosing a
-scope per-action, or a scope on a plain function view with no DRF wrapper at all.
+scope per-action, or a scope on a plain function view with no DRF wrapper at all. **Also not
+attempted, by design:** validating the scope's *naming format* — W004 checks registration only;
+`appkit.throttling.throttle_scope` (§2.15) is the naming-convention half, and a scope W004 finds
+no rate for is reported exactly the same regardless of whether it looks like `app_action` or not.
 
 **Proposed, not implemented in this phase:** the reverse mismatch — a
 `DEFAULT_THROTTLE_RATES` entry that no reachable view's `throttle_scope` ever uses. Usually a typo

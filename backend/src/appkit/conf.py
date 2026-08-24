@@ -25,16 +25,29 @@ never appkit's.
 
 from __future__ import annotations
 
+import enum
 from typing import Any, Final
 
 from django.conf import settings
+
+
+class _Unset(enum.Enum):
+    """Single-member enum backing :data:`UNSET`. Naming this class directly — as
+    `timeout: int | None | _Unset = UNSET` — gives a timeout parameter a real type under
+    ``mypy --strict``, unlike a bare ``object()`` sentinel typed ``Any``. (``Literal[UNSET]``
+    does *not* work here: mypy's ``Literal`` requires the dotted enum-member expression itself,
+    not a variable that happens to hold it.)
+    """
+
+    UNSET = enum.auto()
+
 
 #: Sentinel distinguishing "no explicit value passed" from "pass None explicitly", used by
 #: ``appkit.cache``, ``appkit.mixins``, and ``appkit.files`` to mean "fall back to the
 #: documented ``APPKIT`` default" (docs/CONTRACT.md §2.1, §2.2, §2.9). Defined here because
 #: falling back to a settings default is exactly conf.py's job, and defining it in any of the
 #: three consuming modules would create an import cycle between them.
-UNSET: Final = object()
+UNSET: Final = _Unset.UNSET
 
 DEFAULTS: Final[dict[str, Any]] = {
     "CACHE_TIMEOUT": 60,
