@@ -380,3 +380,4 @@ nothing about it needs to change.
 | 12 | `dynamic="force-dynamic"` placement + `turbopack.root` both undocumented, both non-obvious | `APP-DESIGN.md` §11.2 | ✅ Fixed — new guidance in §11.2 |
 | 13 | Undeduped `@tanstack/react-query` copy without an npm workspace | `APP-DESIGN.md` (SDK-authoring guidance) | ✅ Fixed — extended the peer-dependency bullet |
 | 2–5, 8, 9, 14 | Everything else checked | **no issues found** | N/A |
+| 15 (Phase 7) | `config/settings.py`'s "APPKIT WIRING" banner cited stale line numbers and a pre-1.1-fix statement order after README's block became one contiguous fence | `playground` (this file) | ✅ Fixed — reordered to match README's fence exactly (`INSTALLED_APPS` first), citations now name the section instead of line numbers |

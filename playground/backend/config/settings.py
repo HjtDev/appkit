@@ -10,11 +10,16 @@ playground is trying to prove:
      settings.py, not appkit's, and appkit's README never mentions it (see playground/FINDINGS.md
      finding #3: whether that omission is real).
 
-  2. "APPKIT WIRING — VERBATIM FROM README.md" — a byte-for-byte copy-paste of the three code
-     fences in /home/hjtdev/Projects/appkit/README.md, lines 66-73, 79-82, 89-107, IN README
-     ORDER. Nothing was added, reordered, or "fixed" inside the banner. If the project doesn't
-     boot with only what's between the banners, that gap is recorded in FINDINGS.md as a README
-     defect, not silently patched here.
+  2. "APPKIT WIRING — VERBATIM FROM README.md" — a byte-for-byte copy-paste of README.md's
+     "Settings — add to backend/config/settings.py" code fence, in that fence's own order
+     (`INSTALLED_APPS` first). Nothing was added, reordered, or "fixed" inside the banner. If the
+     project doesn't boot with only what's between the banners, that gap is recorded in
+     FINDINGS.md as a README defect, not silently patched here.
+
+     Cited by section name, not line number: FINDINGS 1.1 collapsed README's block from three
+     non-contiguous fences into one contiguous fence, which moved every line number below this
+     comment cited. A named-section reference survives the next README edit; a line number
+     doesn't.
 
 Do not edit anything between "APPKIT WIRING" START/END without also updating FINDINGS.md.
 """
@@ -161,27 +166,19 @@ REST_FRAMEWORK: dict[str, object] = {
 }
 
 # ============================================================================================
-# APPKIT WIRING — VERBATIM FROM README.md (backend/README.md, this repo, lines 66-107)
-# Do not reorder, merge, or "improve" anything between these banners. See module docstring.
+# APPKIT WIRING — VERBATIM FROM README.md's "Settings — add to backend/config/settings.py"
+# code fence, IN THAT FENCE'S OWN ORDER. Do not reorder, merge, or "improve" anything between
+# these banners. See module docstring.
 # ============================================================================================
 
-# ---- README.md:66-73 ----
+INSTALLED_APPS += ["appkit"]
+
 MIDDLEWARE.insert(
     MIDDLEWARE.index("django.middleware.security.SecurityMiddleware") + 1,
     "appkit.request_id.RequestIDMiddleware",
 )  # before anything that logs
 
 REST_FRAMEWORK["EXCEPTION_HANDLER"] = "appkit.exceptions.standard_exception_handler"
-
-# ---- README.md:79-82 ----
-# backend/config/logging.py imports the request-ID filter from appkit instead of defining it
-# locally — see config/logging.py, which contains the actual "from appkit.request_id import
-# RequestIDFilter, request_id_var" line. Imported here only to build the LOGGING dict below.
-from config.logging import build_logging_config  # noqa: E402
-
-# ---- README.md:89-107 ----
-INSTALLED_APPS += ["appkit"]
-
 REST_FRAMEWORK["DEFAULT_PAGINATION_CLASS"] = "appkit.pagination.DefaultPagination"
 # No REST_FRAMEWORK["PAGE_SIZE"] needed — DefaultPagination carries its own page_size (25).
 
@@ -201,6 +198,12 @@ APPKIT = {
 # ============================================================================================
 # END APPKIT WIRING
 # ============================================================================================
+
+# Playground-only, not part of README's wiring: config/logging.py imports RequestIDFilter/
+# request_id_var from appkit per README's "Settings" section's separate logging.py fence — see
+# config/logging.py for that actual import line. build_logging_config() is imported here only
+# to build the LOGGING dict below.
+from config.logging import build_logging_config  # noqa: E402
 
 # LOGGING is the playground's own — README's "Settings" section supplies only the RequestIDFilter
 # import (config/logging.py), not a full LOGGING dict. This one exists so
