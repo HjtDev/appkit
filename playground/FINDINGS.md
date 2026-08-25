@@ -10,6 +10,13 @@ Legend for **Fix belongs in**: `appkit` (the package itself) · `README.md` (the
 `CONTRACT.md` (the spec) · `APP-DESIGN.md` (the playground/SDK-authoring guidance) ·
 `base-scaffold` (flagged only, per instructions — separate repo, out of scope here).
 
+**Status: every finding scoped to this repo has been fixed** (a follow-up commit on this same
+branch) — README.md's wiring block, CONTRACT.md's request-ID caveat, APP-DESIGN.md's playground/
+SDK-authoring guidance, and `frontend/package.json`'s `prepare` script. Only the base-scaffold
+nginx-config gap (§6) remains flagged-only, per instructions — separate repo. Each section below
+still describes what was found in its original, as-discovered form; the "Fix belongs in" column
+and the summary table at the bottom now note where each landed.
+
 ---
 
 ## 1. The wiring block itself
@@ -361,15 +368,15 @@ nothing about it needs to change.
 
 ## Summary — where every fix belongs
 
-| # | Finding | Fix belongs in |
-|---|---|---|
-| 1.1 | README's wiring block splits/reorders CONTRACT §8's own canonical form | `README.md` |
-| 1.2 | ASGI / `SECURE_PROXY_SSL_HEADER` / `CACHES` / `ScopedRateThrottle` / `LOGGING` shape all silently required, none stated | `README.md` |
-| 1.3 | Stale 4-method `HttpClient` excerpt | `APP-DESIGN.md` |
-| 6 | No copy-pasteable nginx config; two real mistakes resulted | `base-scaffold` (flagged) |
-| 7.2 | `django.request` auto-logger structurally never carries the request ID | `CONTRACT.md` (document), + a unit test worth adding |
-| 10.2 | Django's own `fields.E210` masks appkit's own error path in a bare install | note only, no fix needed |
-| 11 | `frontend/dist/` never auto-builds on install | `appkit` (`prepare` script) |
-| 12 | `dynamic="force-dynamic"` placement + `turbopack.root` both undocumented, both non-obvious | `APP-DESIGN.md` §11.2 |
-| 13 | Undeduped `@tanstack/react-query` copy without an npm workspace | `APP-DESIGN.md` (SDK-authoring guidance) |
-| 2–5, 8, 9, 14 | Everything else checked | **no issues found** |
+| # | Finding | Fix belongs in | Status |
+|---|---|---|---|
+| 1.1 | README's wiring block splits/reorders CONTRACT §8's own canonical form | `README.md` | ✅ Fixed — one contiguous block, CONTRACT §8 order |
+| 1.2 | ASGI / `SECURE_PROXY_SSL_HEADER` / `CACHES` / `ScopedRateThrottle` / `LOGGING` shape all silently required, none stated | `README.md` | ✅ Fixed — new "Four things..." subsection |
+| 1.3 | Stale 4-method `HttpClient` excerpt | `APP-DESIGN.md` | ✅ Fixed — `put` added, `headerSources` added, types corrected |
+| 6 | No copy-pasteable nginx config; two real mistakes resulted | `base-scaffold` (flagged) | Flagged only — separate repo |
+| 7.2 | `django.request` auto-logger structurally never carries the request ID | `CONTRACT.md` (document), + a unit test worth adding | ✅ Documented in CONTRACT.md §2.4 and README's "Known caveats"; unit test still open |
+| 10.2 | Django's own `fields.E210` masks appkit's own error path in a bare install | note only, no fix needed | N/A |
+| 11 | `frontend/dist/` never auto-builds on install | `appkit` (`prepare` script) | ✅ Fixed — `frontend/package.json` |
+| 12 | `dynamic="force-dynamic"` placement + `turbopack.root` both undocumented, both non-obvious | `APP-DESIGN.md` §11.2 | ✅ Fixed — new guidance in §11.2 |
+| 13 | Undeduped `@tanstack/react-query` copy without an npm workspace | `APP-DESIGN.md` (SDK-authoring guidance) | ✅ Fixed — extended the peer-dependency bullet |
+| 2–5, 8, 9, 14 | Everything else checked | **no issues found** | N/A |

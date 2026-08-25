@@ -1312,6 +1312,36 @@ docker compose -f playground/docker-compose.yml up
 
 This is what catches "the hook's shape drifted from the API's actual response" before a host project does — the single highest-value pre-release check, because it's the one thing no unit test on either half can prove.
 
+**`playground/frontend`, `playground/demo-sdk` (or an app's own SDK-under-test), and `appkit`'s
+own `frontend/` need an npm workspace, not three independent `npm install`s.** Without one, any
+package the SDK and the host app both depend on (`@tanstack/react-query` is the concrete case
+that bit this — see the peer-dependency note above) can install as two separate physical copies,
+breaking React Context identity at runtime with no build-time signal. `playground/package.json`
+declaring `"workspaces": ["frontend", "demo-sdk"]` (or the app's own SDK directory) is what
+hoists and dedupes them; `appkit`'s own `frontend/` stays outside that workspace and reached by
+`file:../../frontend`, same as before — a workspace member can still depend on a path outside
+the workspace root by `file:` path.
+
+**If the playground's frontend uses Next.js with Turbopack (the default since Next 15), two
+things need explicit configuration that nothing about this setup makes obvious, both found live
+building this package's own `playground/` (full detail: `playground/FINDINGS.md`):**
+
+1. **`turbopack.root` in `next.config.ts` must be pinned to the true common ancestor of the npm
+   workspace root *and* `appkit`'s own `frontend/`** — Turbopack's `root` is a hard compilation
+   boundary ("files outside of the workspace root are not compiled"), and its own nearest-
+   lockfile auto-inference has no correct single answer once there's more than one
+   `package-lock.json` in the tree (which there always will be — one for `appkit`'s own
+   `frontend/`, one for the playground's npm workspace). Get `root` wrong and Turbopack reports
+   `"Module not found: Can't resolve 'appkit'"` even though plain Node resolves the exact same
+   specifier from the exact same directory without error.
+2. **A page that calls a hook needing `<Providers>` context must export `dynamic =
+   "force-dynamic"` from a *server*-component file** (`page.tsx`, not a `"use client"` file it
+   renders) — otherwise `next build`'s static-generation pass prerenders the client component in
+   a worker with no provider mounted, failing with `"No QueryClient set, use QueryClientProvider
+   to set one"`. The directive is silently ignored when placed directly in a `"use client"` file;
+   split the page into a thin server wrapper exporting `dynamic` and a separate client component
+   it renders.
+
 ### 11.3 `CHANGELOG.md` format
 
 Keep a Changelog, so "did v1.5.0 change my throttle scopes?" is answerable at a glance:
@@ -1340,6 +1370,7 @@ The `frontend/` half of a package is a small SDK — typed hooks and a fetcher, 
 
 - **One entrypoint.** Everything a host can use is exported from `frontend/src/index.ts`. Nothing under `hooks/`, `api/`, or `types.ts` is imported directly by a host — only through `index.ts`. This keeps the internal file layout free to change without it being a breaking change.
 - **Peer dependencies, not bundled ones.** `react`, `@tanstack/react-query` (or `axios`, whichever the app actually uses), and **`appkit`** are declared as `peerDependencies`, never as regular `dependencies`. Bundling any of them would mean a host ends up with two copies — two copies of React, two `QueryClient` instances, or two `appkit`s each holding their own React context, so a host-mounted `ApiClientProvider` and an SDK's `useApiClient` resolve against different instances and the hook sees `null`. Same failure shape as the React/react-query case, for the same reason. The host's own copy, already provided via the scaffold's `frontend/lib/query-client.ts` (see `BASE-DESIGN.md` §3) and `appkit`'s `ApiClientProvider` (`INTEGRATION-GUIDE.md` §2), is what every hook plugs into.
+  **The same failure reproduces from a `devDependency`, not just a bundled one — found building `appkit`'s own `playground/` (`playground/FINDINGS.md`, Phase 6).** An SDK's package.json needs `react`/`@tanstack/react-query` as real installed packages for its own local `tsc` type-checking, and it's tempting to list them under `devDependencies` for that. Without a shared npm **workspace** linking the SDK and the host app that consumes it, this installs a second, real, physically separate copy — `useQuery()` inside the SDK's *compiled* code resolves it from the SDK's own `node_modules`, not the host's, so it reads a different `React.Context` than the host's mounted `QueryClientProvider` created. Symptom: `"No QueryClient set, use QueryClientProvider to set one"` despite a provider correctly mounted — reproduced live with `demo-sdk`'s own `@tanstack/react-query` devDependency, fixed only once `playground/` became an npm workspace so the dependency hoisted and deduped. If a host and an SDK aren't in the same workspace, keep any package like this out of the SDK's `devDependencies` entirely (typecheck against the peer range via `@types/*` alone, or accept untyped `tsc` gaps) rather than risk this.
 - **No inter-app frontend dependencies — with the same named exception as §1.1.** Exactly like the backend half (§6, §1.1), a package's `frontend/` must never depend on or import another reusable app's frontend package. If two apps' UIs need to be combined, that composition happens in the host's own `frontend/` code — see `INTEGRATION-GUIDE.md` §4. `appkit` is the one declared exception, on both halves, for the same reason: it's an explicit, versioned `peerDependency`, not an ambient assumption about a sibling app.
 - **Typed end to end, strictly.** `tsconfig.json` sets `"strict": true`; `types.ts` exports the request/response shapes the hooks use, so a host gets full type safety with no separate `@types` package and no `any`. Those shapes are **generated** from the app's own OpenAPI schema, not hand-written — see "Generated types" below.
 - **The concrete HTTP client is injected, never imported.** An app's `frontend/` can't `import` the host's `frontend/lib/api-client.ts` — that file lives in the host project, not in the publishable package, and the SDK has to build and ship standalone (§1). See "SDK-to-host client contract" below for the mechanism.
@@ -1428,10 +1459,12 @@ That shared provider is `appkit`'s `ApiClientProvider` / `useApiClient`, not som
 This needs no shared package for the *typing* to work — TypeScript is structurally typed, so the host's concrete `ApiClient` satisfies `HttpClient` by having the right methods, not by declaring that it implements anything — but a shared package is exactly what's needed for the *provider* to work, so a host mounts one `ApiClientProvider` instead of one differently-named provider per installed app:
 
 ```ts
-// appkit/src/index.ts (excerpt) — for reference; this ships in appkit, not in this app
+// appkit/src/index.ts (excerpt) — for reference; this ships in appkit, not in this app.
+// Authoritative signatures: docs/CONTRACT.md §14-§15, frontend/src/client.ts + provider.tsx.
 export interface HttpClient {
   get<T>(path: string, init?: RequestInit): Promise<T>;
   post<T>(path: string, body?: unknown, init?: RequestInit): Promise<T>;
+  put<T>(path: string, body?: unknown, init?: RequestInit): Promise<T>;
   patch<T>(path: string, body?: unknown, init?: RequestInit): Promise<T>;
   delete<T>(path: string, init?: RequestInit): Promise<T>;
 }
@@ -1442,7 +1475,10 @@ export interface ApiClientProviderProps {
   client: HttpClient;
   /** basePath per installed app, keyed by the app's own namespace (§1.3) — see
    *  "Where basePath comes from now" below. */
-  basePaths?: Record<string, string>;
+  basePaths?: Readonly<Record<string, string>>;
+  /** Composable per-request header sources, docs/CONTRACT.md §16 — must be a stable
+   *  reference (module scope or useMemo). */
+  headerSources?: ReadonlyArray<() => HeadersInit | Promise<HeadersInit>>;
   children: React.ReactNode;
 }
 
@@ -1450,7 +1486,8 @@ export function ApiClientProvider(props: ApiClientProviderProps): React.ReactEle
 
 /** Called from an app's own api/config.ts, never directly by a host. `key` is this app's
  *  namespace; `defaultBasePath` is what the app's own README suggests if the host's
- *  basePaths map has no entry for `key`. */
+ *  basePaths map has no entry for `key`. Both arguments required — throws on an empty
+ *  defaultBasePath, since there is no host-wide-safe default. */
 export function useApiClient(key: string, defaultBasePath: string): { client: HttpClient; basePath: string };
 ```
 
