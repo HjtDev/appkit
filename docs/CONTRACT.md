@@ -1727,6 +1727,18 @@ must match, stated per function rather than assumed from the name:
   client-rendered page) by not shipping the feature at all in v1.0.0, rather than shipping two
   independently-tuned name tables that drift.
 
+  **Naming wart in `toJalali(value: string | JalaliDate): JalaliDate`, flagged rather than
+  silently resolved during Phase 5.** The `JalaliDate` branch of that *input* is a **Gregorian**
+  `{year, month, day}` triple — only the *return* value is actually Jalali. The `JalaliDate`
+  shape is reused as a plain, calendar-agnostic `{year, month, day}` container for the input
+  case, which reads oddly at a call site (`toJalali({year: 2024, month: 3, day: 20})` looks like
+  it's naming a Jalali date; it isn't). This paragraph's own prose only ever justified excluding
+  `Date`/an instant from the signature, never explained why the object branch is typed with the
+  Jalali shape rather than a distinct `GregorianDate`. Kept as written here — shipping the
+  signature literally as specified, superset-widening it later (e.g. a separate
+  `GregorianDate` type) is additive; narrowing it after v1.0.0 would be a MAJOR bump — with the
+  wart named explicitly in `src/dates.ts`'s own doc comment so a caller isn't left to infer it.
+
   **The timezone rule — decided here because correct arithmetic alone still produces a wrong
   answer without it:**
 
@@ -1821,6 +1833,21 @@ Stated as a general mechanism this contract commits to, not a per-utility footno
   which is exactly the kind of environment-dependent divergence the golden-vector fixture exists
   to eliminate; two hosts on different Node/browser ICU builds could disagree on the identical
   input).
+- **Implemented in Phase 5 as `frontend/src/vendor/jalaali.ts`, ~250 lines, not the ~120
+  estimated above** — the estimate undercounted; the real figure once ported to typed TS with
+  the full `jalCal`/`d2j`/`j2d`/`g2d`/`d2g` break-point machinery is roughly double. Provenance:
+  ported from `jalaali-js` v1.2.8 (https://github.com/jalaali/jalaali-js), MIT, © 2020 Behrang
+  Norouzinia — full licence text reproduced in `frontend/src/vendor/jalaali.ts`'s header comment
+  and in `frontend/THIRD-PARTY-NOTICES.md` (shipped in the npm tarball via `package.json`
+  `files`). Verified against all 79 `round_trip` vectors above (both directions) and all 4
+  `invalid` vectors before vendoring, matching `jdatetime`/`jalali-core`'s FarsiWeb-lineage
+  output exactly across the full 1300s–1450s Jalali span despite the two implementations
+  deriving leap years by different routes (Borkowski's 33-year break-point table here vs.
+  FarsiWeb's `jalali.c` port on the backend). **Intentionally frozen — this is not expected to
+  track upstream `jalaali-js` releases.** The arithmetic is fixed; a future session asked
+  "should this be updated" should read this note rather than re-deriving the answer. Internal to
+  appkit: not exported from `src/index.ts`, not covered by appkit's own semver, covered by the
+  same 95% coverage gate as every other module (vendoring doesn't lower the bar).
 
 ---
 

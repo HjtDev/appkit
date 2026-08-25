@@ -1,0 +1,52 @@
+{
+  "name": "appkit",
+  "version": "0.1.0",
+  "description": "Shared Django + DRF + React foundation every app package and host in this ecosystem depends on — the HttpClient interface, the shared ApiClientProvider/useApiClient pair, the error envelope, and cross-half utilities. Not an installable feature; the thing every other app is built on.",
+  "license": "MIT",
+  "type": "module",
+  "sideEffects": false,
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "THIRD-PARTY-NOTICES.md"
+  ],
+  "peerDependencies": {
+    "react": ">=18",
+    "@tanstack/react-query": ">=5"
+  },
+  "devDependencies": {
+    "@tanstack/react-query": "^5.62.0",
+    "@testing-library/jest-dom": "^6.6.3",
+    "@types/node": "^22.10.2",
+    "@testing-library/react": "^16.1.0",
+    "@types/react": "^19.0.4",
+    "@types/react-dom": "^19.0.2",
+    "@vitejs/plugin-react": "^4.3.4",
+    "@vitest/coverage-v8": "^4.1.10",
+    "eslint": "^9.17.0",
+    "eslint-config-prettier": "^9.1.0",
+    "eslint-plugin-react-hooks": "^5.1.0",
+    "jsdom": "^25.0.1",
+    "msw": "^2.7.0",
+    "prettier": "^3.4.2",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.2",
+    "typescript": "^5.7.2",
+    "typescript-eslint": "^8.19.0",
+    "vitest": "^4.1.10"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "test": "vitest",
+    "lint": "cd .. && eslint frontend/src tests/frontend",
+    "format": "cd .. && prettier --write frontend tests/frontend",
+    "format:check": "cd .. && prettier --check frontend tests/frontend"
+  }
+}
