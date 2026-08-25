@@ -44,6 +44,7 @@
   },
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
+    "prepare": "tsc -p tsconfig.build.json",
     "test": "vitest",
     "lint": "cd .. && eslint frontend/src tests/frontend",
     "format": "cd .. && prettier --write frontend tests/frontend",

@@ -136,7 +136,20 @@ dmypy.json
 node_modules/
 
 # backend/uv.lock is COMMITTED, never ignored — APP-DESIGN.md §3.4: it pins CI and the
-# playground only, and never travels downstream to a consuming host.
+# playground only, and never travels downstream to a consuming host. Same for
+# playground/backend/uv.lock.
+
+# playground/ — Phase 6, docs/APP-DESIGN.md §11.2. Runtime state and generated output only;
+# playground/package-lock.json and playground/backend/uv.lock ARE committed, same reasoning as
+# backend/uv.lock above — they pin the playground's own npm workspace / uv resolution.
+.next/
+next-env.d.ts
+*.tsbuildinfo
+playground/backend/media/
+playground/backend/staticfiles/
+# The self-signed TLS cert/key (playground/nginx/) is generated at `docker build` time
+# (playground/nginx/Dockerfile) and never written to disk outside the image — nothing to
+# ignore here, called out so it's obvious this wasn't overlooked.
 
 # graphify — regenerable output and hardcodes this machine's local paths
 # (see CLAUDE.md's graphify section for how to rebuild it). Not committed.

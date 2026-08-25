@@ -1,0 +1,15 @@
+# Applies to every image built with the repo root as context (playground/backend,
+# playground/frontend, playground/demo-sdk all use `context: ..`). Keeps the build context
+# small and — more importantly — keeps a host OS's own node_modules/.venv/dist off of a stale
+# COPY into the image; every image builds these fresh itself.
+node_modules
+.next
+dist
+.venv
+__pycache__
+*.pyc
+.git
+.ruff_cache
+.mypy_cache
+.pytest_cache
+graphify-out

@@ -1,0 +1,26 @@
+{
+  "name": "demo-sdk",
+  "version": "0.1.0",
+  "description": "Throwaway consuming SDK — the pattern every real app package's frontend/ takes over appkit. docs/APP-DESIGN.md §11.2 / Phase 6: nothing in this repo has ever exercised the useApiClient(key, defaultBasePath) binding path until this package.",
+  "private": true,
+  "type": "module",
+  "sideEffects": false,
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "peerDependencies": {
+    "react": ">=18",
+    "@tanstack/react-query": ">=5",
+    "appkit": ">=0.1"
+  },
+  "devDependencies": {
+    "appkit": "file:../../frontend",
+    "react": "^19.0.0",
+    "@tanstack/react-query": "^5.62.0",
+    "@types/node": "^22.10.2",
+    "@types/react": "^19.0.4",
+    "typescript": "^5.7.2"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json"
+  }
+}

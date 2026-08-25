@@ -61,34 +61,18 @@ Already installed at a version satisfying every app's peer range? Skip this step
 ## Settings — add to `backend/config/settings.py`
 
 The one-time wiring every fresh host needs the first time *any* app is installed
-(`INTEGRATION-GUIDE.md` §2 step 5) — not repeated per app after that:
+(`INTEGRATION-GUIDE.md` §2 step 5) — not repeated per app after that. Copy-pasteable as one
+block, verbatim from `docs/CONTRACT.md` §8:
 
 ```python
+INSTALLED_APPS += ["appkit"]
+
 MIDDLEWARE.insert(
     MIDDLEWARE.index("django.middleware.security.SecurityMiddleware") + 1,
     "appkit.request_id.RequestIDMiddleware",
 )  # before anything that logs
 
 REST_FRAMEWORK["EXCEPTION_HANDLER"] = "appkit.exceptions.standard_exception_handler"
-```
-
-`config/logging.py`'s `build_logging_config()` imports the request-ID filter from appkit
-instead of defining it locally — the `LOGGING` dict's own `filters`/handler wiring is
-unchanged, only where `RequestIDFilter` comes from:
-
-```python
-# backend/config/logging.py
-from appkit.request_id import RequestIDFilter, request_id_var  # was defined locally
-```
-
-Settled: appkit **does** get an `INSTALLED_APPS` entry — `AppKitConfig.ready()` registers the
-system checks named in `docs/CONTRACT.md` §6 (a host that wires the middleware/exception handler
-wrong fails loudly at `manage.py check`, rather than silently losing request IDs or DRF's
-default error shape).
-
-```python
-INSTALLED_APPS += ["appkit"]
-
 REST_FRAMEWORK["DEFAULT_PAGINATION_CLASS"] = "appkit.pagination.DefaultPagination"
 # No REST_FRAMEWORK["PAGE_SIZE"] needed — DefaultPagination carries its own page_size (25).
 
@@ -105,6 +89,68 @@ APPKIT = {
                                              # broken relative URL
 }
 ```
+
+Settled: appkit **does** get an `INSTALLED_APPS` entry — `AppKitConfig.ready()` registers the
+system checks named in `docs/CONTRACT.md` §6 (a host that wires the middleware/exception handler
+wrong fails loudly at `manage.py check`, rather than silently losing request IDs or DRF's
+default error shape).
+
+`config/logging.py`'s `build_logging_config()` imports the request-ID filter from appkit
+instead of defining it locally — the `LOGGING` dict's own `filters`/handler wiring is
+unchanged, only where `RequestIDFilter` comes from:
+
+```python
+# backend/config/logging.py
+from appkit.request_id import RequestIDFilter, request_id_var  # was defined locally
+```
+
+If `config/logging.py` doesn't exist yet, the minimal shape that makes the import above
+actually correlate anything — a handler has to list `"request_id"` in its own `filters`, not
+just declare the filter (`docs/CONTRACT.md` §8; `appkit.checks.check_logging_filter`/
+`appkit.W005` fires if no handler does):
+
+```python
+LOGGING = {
+    "version": 1,
+    "disable_existing_loggers": False,
+    "filters": {"request_id": {"()": RequestIDFilter}},
+    "formatters": {
+        "with_request_id": {
+            "format": "%(asctime)s %(levelname)s [%(request_id)s] %(name)s: %(message)s",
+        },
+    },
+    "handlers": {
+        "console": {
+            "class": "logging.StreamHandler",
+            "filters": ["request_id"],
+            "formatter": "with_request_id",
+        },
+    },
+    "root": {"handlers": ["console"], "level": "INFO"},
+}
+```
+
+### Four things the block above doesn't cover, but a real deployment needs
+
+Found building this package's own `playground/` (`playground/FINDINGS.md`, Phase 6) — none of
+these are `APPKIT` settings, so they don't belong in the dict above, but a host that skips them
+still passes `manage.py check` cleanly and gets broken behavior anyway:
+
+- **ASGI is required, not optional.** `appkit.request_id.RequestIDMiddleware` is async-only
+  (`sync_capable = False`) — a WSGI-only host (plain `runserver`, gunicorn's sync workers)
+  cannot run it at all. Serve via `uvicorn config.asgi:application` (or another ASGI server).
+- **`SECURE_PROXY_SSL_HEADER` (or `BASE-DESIGN.md` §4.3's `TRUST_PROXY_SSL_HEADER`), if this
+  host sits behind a TLS-terminating proxy.** `appkit.media.absolute_url` delegates to Django's
+  own `request.build_absolute_uri()`, which only reports `https://` if this is set — appkit has
+  no setting of its own for it, but every media URL is `http://` (mixed content) behind TLS
+  without it.
+- **A real cache backend.** `appkit.mixins.CachedListMixin` works against whatever
+  `CACHES["default"]` is configured to — Django's `LocMemCache` default means no caching, and no
+  cross-process invalidation, happens at all, silently.
+- **`REST_FRAMEWORK["DEFAULT_THROTTLE_CLASSES"]` must include `ScopedRateThrottle`** for
+  `appkit.throttling.throttle_scope()` (and `appkit.checks`' `appkit.W004`) to have any runtime
+  effect — DRF only enforces a `throttle_scope` class attribute when a throttle class that reads
+  it is actually installed; a view can pass `W004` and still be completely unthrottled.
 
 ## Testing — pytest fixtures (opt-in)
 
@@ -305,6 +351,23 @@ the *source* appkit's own versions are built from, and this repo has no standing
   calls raises. Low-probability, but appkit's blast radius means it now affects every app.
 - `cached_call` can't distinguish "cache miss" from "legitimately cached `None`" — documented
   behavior, not a bug, but worth restating here since this is now shared infrastructure.
+
+## Known caveat — Django's own request logging never carries the request ID
+
+Found via `playground/` (`playground/FINDINGS.md`), root-caused against Django's own source
+(`django/core/handlers/base.py`), not inherited from base-scaffold: Django's built-in
+`django.request` logger — the one that auto-logs every 4xx/5xx response — will **never** carry
+`request_id`, no matter how `MIDDLEWARE` is ordered. `BaseHandler.get_response_async` awaits the
+entire middleware chain (including `RequestIDMiddleware`) to completion *before* it calls
+`log_response()` for a 4xx/5xx response — by that point `RequestIDMiddleware`'s own
+`finally: request_id_var.reset(token)` has already run. This isn't fixable inside appkit without
+reintroducing the exact ID-bleed-under-concurrency bug that `finally: reset()` exists to prevent.
+
+Correlation still works everywhere it matters: the response's own `X-Request-ID` header, any
+logger your *own* view/handler code calls during request handling (e.g.
+`standard_exception_handler`'s `logger.exception(...)`), and `appkit.testing`'s
+`appkit_frozen_request_id` fixture all see the correct ID. Only Django's automatic, built-in
+4xx/5xx logging does not.
 
 ## Test helpers
 

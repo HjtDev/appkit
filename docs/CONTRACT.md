@@ -296,6 +296,20 @@ most literally, since Phase 2/3 of the scaffold already worked out its sharp edg
   assertable.
 - Belongs near the top of `MIDDLEWARE`, after `SecurityMiddleware`, before anything that logs —
   the ordering `appkit.W002` (§6) checks for.
+- **Django's own `django.request` auto-logger (the built-in 4xx/5xx logging) never carries
+  `request_id`, structurally, regardless of `MIDDLEWARE` ordering.** Found and root-caused via
+  `playground/` (`playground/FINDINGS.md`, Phase 6), against Django's own source
+  (`django/core/handlers/base.py`): `BaseHandler.get_response_async` `await`s the entire
+  middleware chain — including `RequestIDMiddleware` — to completion before calling
+  `log_response()` for a 4xx/5xx response, by which point `RequestIDMiddleware`'s own
+  `finally: request_id_var.reset(token)` has already run. This is not a bug to fix here — the
+  only alternative is not resetting the contextvar, which reopens the concurrency leak the first
+  bullet above exists to prevent. Correlation is intact everywhere that matters: the response's
+  own `X-Request-ID` header, and any logger *application code* calls during request handling
+  (a view, `standard_exception_handler`'s own `logger.exception(...)`). Only Django's automatic,
+  built-in request logging is exempt — worth a unit test asserting on `caplog` for the
+  `django.request` logger specifically, so this doesn't get re-discovered expecting different
+  behaviour.
 
 ### 2.5 `appkit.crypto`
 
