@@ -1,3 +1,13 @@
+# graphify
+
+This project has a knowledge graph at graphify-out/ with god nodes, community structure, and cross-file relationships.
+
+Rules:
+- For codebase questions, first run `graphify query "<question>"` when graphify-out/graph.json exists. Use `graphify path "<A>" "<B>"` for relationships and `graphify explain "<concept>"` for focused concepts. These return a scoped subgraph, usually much smaller than GRAPH_REPORT.md or raw grep output.
+- If graphify-out/wiki/index.md exists, use it for broad navigation instead of raw source browsing.
+- Read graphify-out/GRAPH_REPORT.md only for broad architecture review or when query/path/explain do not surface enough context.
+- After modifying code, run `graphify update .` to keep the graph current (AST-only, no API cost).
+
 # CLAUDE.md — appkit (app package #1)
 
 A standalone, versioned, dual-package Django + React app package — but not an ordinary one.
@@ -99,6 +109,11 @@ cd playground/backend && uv sync
 docker compose -f playground/docker-compose.yml up
 ```
 
+CI: `.github/workflows/ci.yml` here is a ~10-line caller only. The actual jobs live in the
+org-level reusable workflow at `HjtDev/.github`'s `.github/workflows/app-package-ci.yml`
+(`docs/APP-DESIGN.md` §10.1) — it is not in this repo, so don't go looking for it here or
+recreate it locally.
+
 ## Semver triggers — MAJOR bumps even when the diff is small
 
 - Removing/renaming an exported name from any `appkit.*` module, or changing a signature.
@@ -174,13 +189,3 @@ chore(backend): add uv project config and tooling baseline
 - Add MANIFEST.in, .python-version and .dockerignore
 - Update .gitignore to cover .venv, .ruff_cache and .mypy_cache
 ```
-
-## graphify
-
-This project has a knowledge graph at graphify-out/ with god nodes, community structure, and cross-file relationships.
-
-Rules:
-- For codebase questions, first run `graphify query "<question>"` when graphify-out/graph.json exists. Use `graphify path "<A>" "<B>"` for relationships and `graphify explain "<concept>"` for focused concepts. These return a scoped subgraph, usually much smaller than GRAPH_REPORT.md or raw grep output.
-- If graphify-out/wiki/index.md exists, use it for broad navigation instead of raw source browsing.
-- Read graphify-out/GRAPH_REPORT.md only for broad architecture review or when query/path/explain do not surface enough context.
-- After modifying code, run `graphify update .` to keep the graph current (AST-only, no API cost).

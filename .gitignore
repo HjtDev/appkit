@@ -54,6 +54,9 @@ coverage/
 # Translations
 *.mo
 *.pot
+# ...except appkit's own shipped catalogue — a wheel consumer can't run compilemessages, so the
+# compiled .mo must be committed (docs/APP-DESIGN.md §2's "package data must be declared" note).
+!backend/src/appkit/locale/**/*.mo
 
 # Django stuff:
 *.log
