@@ -9,13 +9,14 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "appkit"
 # 0.x = no stability guarantee while the public surface (docs/CONTRACT.md) is still being
-# written into code. From Phase 5 onward this must match frontend/package.json and
-# CHANGELOG.md; CI's version-lockstep job enforces it. Bumped to 1.0.0 once, deliberately,
-# at Phase 8 — not incrementally per phase, since nothing consumes the intermediate numbers.
-version = "0.1.0"
+# written into code. Bumped to 1.0.0 here, deliberately, at Phase 8 — not incrementally per
+# phase, since nothing consumed the intermediate numbers. Must match frontend/package.json and
+# CHANGELOG.md; CI's version-lockstep job enforces it from here on.
+version = "1.0.0"
 description = "Shared Django + DRF foundation every app package and host in this ecosystem depends on — cache, mixins, error envelope, request-ID plumbing, and the HttpClient/provider contract. Not an installable feature; the thing every other app is built on."
 requires-python = ">=3.13"
 license = "MIT"
+license-files = ["LICENSE"]
 
 # appkit is the single most widely shared dependency in the entire ecosystem (docs/CONTRACT.md
 # §9) — an exact pin here is the worst possible place for one. Every range below is verified
@@ -43,7 +44,11 @@ dependencies = [
 # appkit.files, never at module top level.
 [project.optional-dependencies]
 crypto = ["cryptography>=42,<51"]
-images = ["pillow>=10,<13"]
+# >=11.3, not just >=10: pillow only started shipping cp314 wheels at 11.3.0, and its sdist
+# fails to build on 3.14 (setup.py's version detection raises KeyError against current
+# setuptools) — found live by Phase 8's resolution-matrix CI job against Python 3.14, the
+# version this package's own tooling standardizes on (.python-version, playground, CI default).
+images = ["pillow>=11.3,<13"]
 
 # PEP 735 groups = tooling for developing appkit ITSELF. Never installed by a consumer, never
 # published, not visible to a host at all.
@@ -70,7 +75,11 @@ test = [
     "pytest-django>=4.9",
     "pytest-cov>=6.0",
     "pytest-xdist>=3.6",
-    "psycopg[binary]>=3.2",          # tests run on Postgres, APP-DESIGN.md §7.5
+    # >=3.2.10, not just >=3.2: psycopg-binary only started shipping cp314 wheels at 3.2.10 —
+    # found live by Phase 8's resolution-matrix CI job, which resolves this floor for real
+    # against Python 3.14 rather than assuming any 3.2.x satisfies it. tests run on Postgres,
+    # APP-DESIGN.md §7.5.
+    "psycopg[binary]>=3.2.10",
 ]
 
 [tool.uv]
@@ -83,6 +92,14 @@ include-package-data = true
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+# Belt and braces alongside MANIFEST.in: package-data is what actually lands package data in the
+# *wheel* (MANIFEST.in governs the sdist). py.typed was previously covered by neither — it
+# appeared in the stale egg-info SOURCES.txt but nothing affirmatively included it in a built
+# wheel, which would have silently stripped every type hint from every consumer. Verified by
+# Phase 8's wheel-smoke-test CI job, not assumed.
+[tool.setuptools.package-data]
+appkit = ["py.typed", "locale/*/LC_MESSAGES/*.po", "locale/*/LC_MESSAGES/*.mo"]
 
 # ---------------------------------------------------------------- ruff
 [tool.ruff]

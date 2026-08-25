@@ -1,0 +1,33 @@
+# Thin caller — all real logic lives in the org-level reusable workflow (APP-DESIGN.md §10.1,
+# §10.2). Never add job logic here; add an input to app-package-ci.yml instead.
+#
+# Ref pinning: @main while appkit is the only consumer of the reusable workflow — a workflow fix
+# reaches this CI without a second PR in a second repo, and there is no other consumer to break.
+# Once a second app package exists, cut a `v1` tag in HjtDev/.github and move every caller
+# (including this one) to `@v1` — from that point a bad push to that repo's main would otherwise
+# break every app's CI simultaneously with no staging step.
+name: CI
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+
+jobs:
+  ci:
+    uses: HjtDev/.github/.github/workflows/app-package-ci.yml@main
+    with:
+      package-name: appkit
+      coverage-threshold: 95
+      extras: "crypto images"
+      postgres-db: test_appkit
+      needs-redis: false
+      check-migrations: false
+      check-openapi-schema: false
+      check-generated-types: false
+      npm-workspace-root: "."
+      wheel-must-contain: |
+        appkit/py.typed
+        appkit/locale/fa/LC_MESSAGES/django.mo
+      forbid-runtime-dependencies: true
+    secrets: inherit
