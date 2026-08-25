@@ -44,7 +44,11 @@ dependencies = [
 # appkit.files, never at module top level.
 [project.optional-dependencies]
 crypto = ["cryptography>=42,<51"]
-images = ["pillow>=10,<13"]
+# >=11.3, not just >=10: pillow only started shipping cp314 wheels at 11.3.0, and its sdist
+# fails to build on 3.14 (setup.py's version detection raises KeyError against current
+# setuptools) — found live by Phase 8's resolution-matrix CI job against Python 3.14, the
+# version this package's own tooling standardizes on (.python-version, playground, CI default).
+images = ["pillow>=11.3,<13"]
 
 # PEP 735 groups = tooling for developing appkit ITSELF. Never installed by a consumer, never
 # published, not visible to a host at all.
@@ -71,7 +75,11 @@ test = [
     "pytest-django>=4.9",
     "pytest-cov>=6.0",
     "pytest-xdist>=3.6",
-    "psycopg[binary]>=3.2",          # tests run on Postgres, APP-DESIGN.md §7.5
+    # >=3.2.10, not just >=3.2: psycopg-binary only started shipping cp314 wheels at 3.2.10 —
+    # found live by Phase 8's resolution-matrix CI job, which resolves this floor for real
+    # against Python 3.14 rather than assuming any 3.2.x satisfies it. tests run on Postgres,
+    # APP-DESIGN.md §7.5.
+    "psycopg[binary]>=3.2.10",
 ]
 
 [tool.uv]
