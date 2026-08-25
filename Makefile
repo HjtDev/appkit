@@ -37,3 +37,34 @@ typecheck:
 	cd backend && uv run mypy src
 
 check: test lint typecheck test-bare
+
+# Phase 6 playground — docs/APP-DESIGN.md §11.2. Brings up Postgres, Redis, both appkit halves
+# (linked by path, not tag), and nginx. Requires playground/.env (cp playground/.env.example
+# playground/.env first) and appkit's own frontend dist/ built once (`cd frontend && npm run
+# build`) — see playground/README.md.
+PLAYGROUND_COMPOSE = docker compose -f playground/docker-compose.yml --env-file playground/.env
+
+.PHONY: playground-up playground-down playground-verify playground-bare
+
+playground-up:
+	$(PLAYGROUND_COMPOSE) up -d --wait
+
+playground-down:
+	$(PLAYGROUND_COMPOSE) down -v
+
+# The live suite (real HTTP through nginx) + both directions of the system checks. Does NOT
+# include tests/test_plugin_fixtures.py — that one runs against the LOCAL venv, not `docker
+# exec`, and needs POSTGRES_HOST=localhost POSTGRES_PORT=55434 REDIS_URL=redis://localhost:63792/0
+# exported first; see playground/README.md.
+playground-verify:
+	$(PLAYGROUND_COMPOSE) exec backend python manage.py check
+	cd playground/backend && \
+	set -a && . ../.env && set +a && \
+	uv run pytest -m live
+
+# The extras matrix's bare leg — brings the backend up with neither crypto nor images, so
+# manage.py check surfaces Django's own fields.E210 (Pillow) rather than a simulated import
+# failure. See playground/FINDINGS.md and playground/README.md's "extras matrix" section.
+playground-bare:
+	PLAYGROUND_EXTRAS=bare $(PLAYGROUND_COMPOSE) build backend
+	$(PLAYGROUND_COMPOSE) up -d backend

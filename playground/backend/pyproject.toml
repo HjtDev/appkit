@@ -1,0 +1,40 @@
+[project]
+name = "playground"
+version = "0.1.0"
+requires-python = ">=3.13"
+dependencies = [
+    "appkit[crypto,images]",
+    "django>=5.2,<7.0",
+    "djangorestframework>=3.15,<4.0",
+    "uvicorn>=0.34",
+    "psycopg[binary]>=3.2",
+    "django-redis>=5.4",
+    "python-decouple>=3.8",
+]
+
+[dependency-groups]
+test = ["pytest>=8.3", "pytest-django>=4.9", "httpx>=0.27"]
+
+[tool.uv]
+default-groups = ["test"]
+
+# Path-linked, not tag-pinned — this is what makes the playground prove appkit's OWN working
+# tree, not a released version of it. docs/APP-DESIGN.md §11.2: "Use [tool.uv.sources] for this
+# rather than an editable install flag — it redirects where a dependency resolves from without
+# changing the dependency declaration, so the same pyproject.toml line works for both dev and
+# release."
+[tool.uv.sources]
+appkit = { path = "../../backend", editable = true }
+
+[tool.pytest.ini_options]
+DJANGO_SETTINGS_MODULE = "config.settings"
+pythonpath = ["."]
+# `-p appkit.testing` opted in HERE, in a real consumer's own addopts — the one place in this
+# repo that path is actually supposed to be exercised (backend/pyproject.toml:164-180 explains
+# why appkit's own suite deliberately never adds it to its own addopts: doing so silently
+# breaks coverage measurement on appkit.request_id/appkit.testing themselves. The playground
+# carries no coverage gate on appkit, so that tradeoff doesn't apply here).
+addopts = "-p appkit.testing -ra --strict-markers"
+markers = [
+    "live: hits the real docker-compose stack over HTTP through nginx, not Django's test client",
+]
