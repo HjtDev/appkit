@@ -51,13 +51,13 @@ __all__ = [
 # treat specially, once a part gets long or contains something other than
 # alphanumerics/dashes/underscores/periods.
 #
-# **Deviation from the scaffold's `_SAFE_PART`, and from docs/CONTRACT.md §2.1's own regex
-# notation `[A-Za-z0-9\-_:.]`:** both include `:` as a "safe" character for an individual
-# *part*, which defeats the segment-smuggling protection the very next sentence of §2.1
-# demands — a part containing `:` (the join delimiter used one line below) would be embedded
-# raw instead of hashed, letting it forge extra `namespace:version:...` segments. Excluding
-# `:` here is what actually satisfies "a delimiter must never smuggle a second segment into
-# the key"; flagged for a one-line fix to §2.1's charset notation.
+# **Deviation from the scaffold's `_SAFE_PART`:** the scaffold's version includes `:` as a
+# "safe" character for an individual *part*, which would defeat the segment-smuggling
+# protection below — a part containing `:` (the join delimiter used one line down) would be
+# embedded raw instead of hashed, letting it forge extra `namespace:version:...` segments.
+# Excluding `:` here is what actually satisfies "a delimiter must never smuggle a second
+# segment into the key". docs/CONTRACT.md §2.1's own notation (`[A-Za-z0-9\-_.]`) already
+# excludes it too and states this exclusion explicitly — the two agree.
 _MAX_RAW_PART_LEN = 40
 _SAFE_PART = frozenset("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_.")
 
