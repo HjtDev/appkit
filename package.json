@@ -1,0 +1,8 @@
+{
+  "name": "appkit-repo",
+  "private": true,
+  "description": "Workspace root — exists only so `npm install` hoists frontend/'s dependencies to a node_modules directory that is an ancestor of both frontend/ and tests/frontend/ (docs/CONTRACT.md §19's shared tests/fixtures/ directory sits between the two, outside frontend/ itself). Not published; carries no dependencies of its own.",
+  "workspaces": [
+    "frontend"
+  ]
+}
