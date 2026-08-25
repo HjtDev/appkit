@@ -138,8 +138,7 @@ node_modules/
 # backend/uv.lock is COMMITTED, never ignored — APP-DESIGN.md §3.4: it pins CI and the
 # playground only, and never travels downstream to a consuming host.
 
-# graphify — regenerable extraction cache and machine-local state; graph.json,
-# graph.html, and GRAPH_REPORT.md are committed, the rest is not.
-graphify-out/cache/
-graphify-out/.graphify_python
-graphify-out/.graphify_root
+# graphify — regenerable output and hardcodes this machine's local paths
+# (see CLAUDE.md's graphify section for how to rebuild it). Not committed.
+graphify-out/
+.claude/
