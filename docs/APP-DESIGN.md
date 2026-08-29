@@ -1323,6 +1323,23 @@ jobs:
     secrets: inherit
 ```
 
+**Setting `publish-npm: true` needs one more block in the caller, not just the `with:` line.**
+A reusable workflow's job can only *downscope* the permissions the calling workflow grants, never
+escalate past them — the `publish-npm` job (§10.1) requests `id-token: write` for OIDC, so if the
+repo's default `GITHUB_TOKEN` permissions are the (increasingly common) restrictive `read` default,
+the whole `workflow_call` fails **validation before any job runs at all** — a zero-job
+`startup_failure`, not a red `publish-npm` job specifically, discovered live wiring this up for
+appkit v1.0.1. Add:
+
+```yaml
+permissions:
+  contents: read
+  id-token: write
+```
+
+at the top level of `ci.yml`, alongside `on:`/`jobs:` — a package that never sets
+`publish-npm: true` doesn't need this.
+
 ### 10.3 Branch protection & automation
 
 - Require `backend-quality`, `backend-tests`, `frontend`, `version-lockstep`, and `no-inter-app-imports` to pass before merge to `main`. The rest (`resolution-matrix`, `security-audit`) can be advisory at first and promoted once they're stable. The two generated-types diff checks (§12) are steps inside `backend-tests` and `frontend` respectively, not separate jobs — requiring those two jobs already requires them.
