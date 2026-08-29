@@ -6,7 +6,7 @@
 
 import { useState, useMemo } from "react";
 import { QueryClientProvider } from "@tanstack/react-query";
-import { ApiClientProvider, makeQueryClient } from "appkit";
+import { ApiClientProvider, makeQueryClient } from "@hjtdev/appkit";
 import { apiClient } from "@/lib/api-client";
 import { getAuthHeaders } from "@/lib/auth"; // host's own — appkit knows nothing about it
 

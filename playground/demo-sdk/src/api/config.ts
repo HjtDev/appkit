@@ -3,6 +3,6 @@
 // defaultBasePath), never anything host-specific.
 "use client";
 
-import { useApiClient } from "appkit";
+import { useApiClient } from "@hjtdev/appkit";
 
 export const useDemoConfig = () => useApiClient("demo", "/api/v1/demo");

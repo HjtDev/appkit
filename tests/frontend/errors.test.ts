@@ -99,11 +99,23 @@ describe("isApiErrorEnvelope", () => {
     ).toBe(true);
   });
 
-  it("rejects an unrecognised code", () => {
+  it("accepts a well-shaped envelope with an unrecognised code — forward-compatibility (§1)", () => {
+    // A future minor version may carve a new, more specific code out of "error" — an older
+    // minor's isApiErrorEnvelope must still recognise the envelope SHAPE so message/details/
+    // request_id survive; only apiErrorFromEnvelope decides what to do with the unknown code.
     expect(
       isApiErrorEnvelope({
-        error: { code: "gateway_timeout", message: "x", details: {}, request_id: null },
+        error: { code: "rate_limit_exceeded", message: "x", details: {}, request_id: null },
       }),
+    ).toBe(true);
+  });
+
+  it("still rejects a non-string or empty-string code", () => {
+    expect(
+      isApiErrorEnvelope({ error: { code: 42, message: "x", details: {}, request_id: null } }),
+    ).toBe(false);
+    expect(
+      isApiErrorEnvelope({ error: { code: "", message: "x", details: {}, request_id: null } }),
     ).toBe(false);
   });
 
@@ -219,12 +231,38 @@ describe("apiErrorFromEnvelope — never throws, the §17 adversarial-input list
     expect(err.body).toEqual({ hello: "world" });
   });
 
-  it("handles an envelope with a code outside the ten (falls through to unknown_error)", () => {
+  it('degrades an unrecognised code to "error" while preserving message/details/request_id', () => {
+    // The forward-compatibility case (§1): a host on an older minor sees a code the backend
+    // added later. It must not lose the message/details/request_id the way falling through to
+    // "unknown_error" would — only the code itself degrades, to the documented catch-all.
+    const err = apiErrorFromEnvelope({
+      status: 429,
+      requestId: null,
+      retryAfter: "30",
+      body: {
+        error: {
+          code: "rate_limit_exceeded",
+          message: "Slow down.",
+          details: { retry_in: 30 },
+          request_id: "r-1",
+        },
+      },
+    });
+    expect(err.code).toBe("error");
+    expect(err.message).toBe("Slow down.");
+    expect(err.details).toEqual({ retry_in: 30 });
+    expect(err.requestId).toBe("r-1");
+    expect(err.retryAfter).toBe("30");
+    expect(err.unrecognizedCode).toBe("rate_limit_exceeded");
+  });
+
+  it("leaves unrecognizedCode null for every known code", () => {
     const err = apiErrorFromEnvelope({
       ...base,
-      body: { error: { code: "gateway_timeout", message: "x", details: {}, request_id: null } },
+      body: { error: { code: "server_error", message: "x", details: {}, request_id: null } },
     });
-    expect(err.code).toBe("unknown_error");
+    expect(err.code).toBe("server_error");
+    expect(err.unrecognizedCode).toBeNull();
   });
 
   it("handles an envelope missing details", () => {

@@ -57,16 +57,7 @@ Therefore:
     Make the distinction crisp, because this is the rule most likely to be misapplied later: §6 bans an app **reaching sideways into another app's models and services** — an ambient assumption that some other app just happens to be installed in the same host. A declared shared dependency is a different category entirely: it's explicit, versioned, resolved by `uv`, and sitting right there in `pyproject.toml` for anyone to see — the same category as the `jwt-core` dependency an OTP app would declare, not the category §6 exists to prevent. The test is mechanical: *is it in `[project.dependencies]`?* If yes, it's a declared dependency. If no, and you're importing it anyway, that's the §6 violation.
 - **Test/lint tooling never appears in `dependencies`.** It goes in `[dependency-groups]`, which is never installed by a consumer — see §3.
 
-### 1.2 Private repository access
-
-`git+https://github.com/yourorg/...` implies a private org repo in most real setups. Two supported ways to authenticate, both documented so a host (or a CI job, or a Docker build) never has to guess:
-
-- **SSH:** use `git+ssh://git@github.com/yourorg/notifications-app.git@v1.4.2#subdirectory=backend` and rely on the developer's SSH agent. In Docker, forward the agent with `RUN --mount=type=ssh`.
-- **Token:** set `UV_INDEX_...`/`GIT_CONFIG` credential helpers, or in CI export a `GH_TOKEN` and configure `git config --global url."https://x-access-token:${GH_TOKEN}@github.com/".insteadOf "https://github.com/"`. In Docker use `RUN --mount=type=secret,id=gh_token`.
-
-**Never pass a token as a Docker `ARG` or `ENV`.** It persists in image history even if a later layer unsets it.
-
-### 1.3 Namespacing convention
+### 1.2 Namespacing convention
 
 A handful of things from every installed app end up merged into one shared, flat namespace — one `settings.py`, one `.env`, one React Query cache. Two apps picking the same short name silently collide there, so every one of these is prefixed with the app's own name, no exceptions:
 
@@ -439,7 +430,7 @@ The `cd` in each entry is load-bearing. `uv run --project backend mypy` sets env
 ## 4. Views, Rate Limiting & API Documentation Standards
 
 - **Caching & error handling.** Every GET/list/retrieve view uses a caching mixin, and every view uses consistent error-handling/response conventions. Because this package must work standalone in *any* host project, it cannot import a host's `backend/tools/` — that folder is project-owned and isn't guaranteed to exist, or to exist at a stable import path, in every host. Instead, every app declares `appkit>=1.0,<2.0` (§1.1) and imports `CachedListMixin` from `appkit.mixins` and `standard_exception_handler` from `appkit.exceptions` — see `BASE-DESIGN.md` §3 for the exact envelope (`{"error": {"code", "message", "details", "request_id"}}` and the fixed `code` list) those helpers produce. This is a declared, versioned dependency, not an assumption about the host's internals — see §1.1 for why `appkit` is the one named exception to "never depend on another app package."
-- **Rate limiting.** Every view declares a `throttle_scope`, prefixed per §1.3, and every scope is listed in the app's `README.md` (§8) so a host knows what to add to `REST_FRAMEWORK['DEFAULT_THROTTLE_RATES']`. No view ships without one.
+- **Rate limiting.** Every view declares a `throttle_scope`, prefixed per §1.2, and every scope is listed in the app's `README.md` (§8) so a host knows what to add to `REST_FRAMEWORK['DEFAULT_THROTTLE_RATES']`. No view ships without one.
 - **API documentation.** Every view/viewset carries a complete `drf-spectacular` `@extend_schema` (or `extend_schema_view`) — summary, description, request/response serializers, and `tags=["notifications"]` for public views or `tags=["notifications-admin"]` for admin-dashboard views, so Swagger stays grouped per app and per surface.
 - **Pagination.** List views that can return unbounded data set an explicit `pagination_class` rather than relying on the host's `DEFAULT_PAGINATION_CLASS`, which the app can't know. The page-size default is documented in the README block.
 
@@ -923,9 +914,14 @@ This is a recommendation, not something that auto-registers — the host creates
 ## Installation — frontend
 
 ```bash
-npm install "github:yourorg/appkit#v1.2.0:frontend"          # if not already installed
+npm install @hjtdev/appkit                                    # if not already installed
 npm install "github:yourorg/notifications-app#v1.4.2:frontend"
 ```
+
+`@hjtdev/appkit` is a registry install — one package, one name, regardless of which org is
+building the app package that depends on it. This app's own frontend half, by contrast, is
+whatever this template's own author chooses to publish (a git subdirectory install, shown here,
+or its own registry package) — appkit does not prescribe it.
 
 ## Usage — add this app's basePath to the shared provider, then import hooks from the package root
 
@@ -935,7 +931,7 @@ every installed app shares (one provider for the whole host, mounted once — se
 
 ```tsx
 // frontend/app/providers.tsx — one-time wiring per host, one basePaths entry per app
-import { ApiClientProvider } from "appkit";
+import { ApiClientProvider } from "@hjtdev/appkit";
 import { apiClient } from "@/lib/api-client";
 
 <ApiClientProvider
@@ -1019,6 +1015,13 @@ on:
       coverage-threshold:
         type: number
         default: 85
+      publish-npm:
+        # Publishes frontend/ to the npm registry on a v* tag push, via OIDC trusted publishing
+        # — no stored token, no `secrets:` entry needed for this. false by default: an app
+        # package that ships its frontend half by git tag (INTEGRATION-GUIDE.md §2 step 4) never
+        # sets this. See §11.1's one-time bootstrap before flipping it on for the first time.
+        type: boolean
+        default: false
     secrets:
       ORG_READ_TOKEN:
         required: false   # only needed if this app depends on a private shared toolkit
@@ -1208,7 +1211,12 @@ jobs:
         run: |
           PY=$(grep -m1 '^version' backend/pyproject.toml | sed 's/.*"\(.*\)"/\1/')
           JS=$(node -p "require('./frontend/package.json').version")
-          CL=$(grep -m1 -oE '[0-9]+\.[0-9]+\.[0-9]+' CHANGELOG.md)
+          # Anchored to the CHANGELOG's own version heading, NOT a bare numeric grep — an
+          # unanchored `grep -oE '[0-9]+\.[0-9]+\.[0-9]+'` matches the first x.y.z-shaped string
+          # in the file, which for a Keep a Changelog document is the changelog format's own
+          # "keepachangelog.com/en/1.1.0/" preamble link, producing a false mismatch on every
+          # release.
+          CL=$(grep -m1 -oE '^## \[[0-9]+\.[0-9]+\.[0-9]+\]' CHANGELOG.md | grep -oE '[0-9]+\.[0-9]+\.[0-9]+')
           echo "pyproject=$PY package.json=$JS changelog=$CL"
           test "$PY" = "$JS" && test "$PY" = "$CL" \
             || { echo "::error::version mismatch — see APP-DESIGN.md §11"; exit 1; }
@@ -1251,6 +1259,48 @@ jobs:
             grep -q "$scope" README.md || { echo "::error::scope $scope missing from README"; fail=1; }
           done
           exit $fail
+
+  # ---------------------------------------------------------------- publish
+  # Only runs when the calling workflow opts in with publish-npm: true, and only on a v* tag —
+  # never on a plain push to main or a PR. id-token: write is what makes OIDC trusted publishing
+  # possible; there is no NPM_TOKEN anywhere in this job. Requires npm >=11.5.1 (bundled with a
+  # sufficiently recent Node 22/24 actions/setup-node release) and a one-time manual bootstrap
+  # publish + Trusted Publisher link on npmjs.com before the first tag — see §11.1.
+  publish-npm:
+    if: inputs.publish-npm && startsWith(github.ref, 'refs/tags/v')
+    needs: [frontend]
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ inputs.node-version }}
+          registry-url: https://registry.npmjs.org
+      - run: npm ci
+        working-directory: frontend
+      # Skips cleanly, rather than failing, if this exact name@version is already on the
+      # registry. The release that bootstraps trusted publishing always hits this: the very
+      # first publish has to happen by hand, before trusted publishing can even be configured,
+      # for the SAME version this tag is about to push — without this check, that one release's
+      # tag would always fail this job with npm's "cannot publish over previously published
+      # version," the opposite of the "tag only after CI is green" workflow this supports.
+      - name: Skip if this version is already published
+        id: check
+        working-directory: frontend
+        run: |
+          NAME=$(node -p "require('./package.json').name")
+          VERSION=$(node -p "require('./package.json').version")
+          if npm view "$NAME@$VERSION" version >/dev/null 2>&1; then
+            echo "already-published=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "already-published=false" >> "$GITHUB_OUTPUT"
+          fi
+      - run: npm publish --access public --provenance
+        if: steps.check.outputs.already-published == 'false'
+        working-directory: frontend
 ```
 
 ### 10.2 What an app repo actually commits
@@ -1273,6 +1323,23 @@ jobs:
     secrets: inherit
 ```
 
+**Setting `publish-npm: true` needs one more block in the caller, not just the `with:` line.**
+A reusable workflow's job can only *downscope* the permissions the calling workflow grants, never
+escalate past them — the `publish-npm` job (§10.1) requests `id-token: write` for OIDC, so if the
+repo's default `GITHUB_TOKEN` permissions are the (increasingly common) restrictive `read` default,
+the whole `workflow_call` fails **validation before any job runs at all** — a zero-job
+`startup_failure`, not a red `publish-npm` job specifically, discovered live wiring this up for
+appkit v1.0.1. Add:
+
+```yaml
+permissions:
+  contents: read
+  id-token: write
+```
+
+at the top level of `ci.yml`, alongside `on:`/`jobs:` — a package that never sets
+`publish-npm: true` doesn't need this.
+
 ### 10.3 Branch protection & automation
 
 - Require `backend-quality`, `backend-tests`, `frontend`, `version-lockstep`, and `no-inter-app-imports` to pass before merge to `main`. The rest (`resolution-matrix`, `security-audit`) can be advisory at first and promoted once they're stable. The two generated-types diff checks (§12) are steps inside `backend-tests` and `frontend` respectively, not separate jobs — requiring those two jobs already requires them.
@@ -1288,8 +1355,15 @@ jobs:
 3. **Decide the bump** from the Conventional Commit history: any `!`/`BREAKING CHANGE` → major; any `feat:` → minor; otherwise patch. Remember from §6 that a changed signal payload, a changed `services.py` signature, or a renamed factory is a **major**, even if the diff looks tiny.
 4. **Bump the version in three places together:** `backend/pyproject.toml`, `frontend/package.json`, and a new `CHANGELOG.md` section. CI's `version-lockstep` job fails the build if they disagree, so this cannot be forgotten silently. Generated types (§12) make this rule enforceable rather than aspirational: a serializer change now mechanically produces a `schema.yml` diff and, from that, a `schema.d.ts` diff — and `backend-tests`/`frontend` (§10.1) refuse to pass until both are committed. There is no longer a way to ship a backend shape change in a commit whose frontend types weren't regenerated alongside it, which is exactly the class of "tiny diff, actually a major" mistake step 3 above warns about.
 5. **Update `README.md`'s config block** (§8) if settings, `.env` keys, throttle scopes, URLs, signal payloads, service signatures, factories, or exported hooks changed.
-6. **Commit, tag `vX.Y.Z`** (one tag covers both halves), push the tag. The tag push re-runs CI with the tag-match assertion active.
+6. **Commit, tag `vX.Y.Z`** (one tag covers both halves), push the tag. The tag push re-runs CI with the tag-match assertion active — and, for an app publishing its frontend half to npm (`publish-npm: true`, §10.1), publishes `frontend/` automatically via the `publish-npm` job's OIDC trusted-publish step. Nothing to run by hand once bootstrapped.
 7. **In a consuming project**, follow `INTEGRATION-GUIDE.md` §2's upgrade path.
+
+**One-time bootstrap, before the first tag that should publish to npm:** trusted publishing can
+only be configured on a package that already exists, so the very first publish has to happen by
+hand: `cd frontend && npm run build && npm publish --access public`. Then, on npmjs.com, open
+the package's Settings → Trusted Publisher and link this repo and the workflow filename that
+calls `app-package-ci.yml` with `publish-npm: true`. Every tag pushed after that publishes from
+CI with no stored credential at all.
 
 ### 11.2 The `playground/`
 
@@ -1388,7 +1462,7 @@ The `frontend/` half of a package is a small SDK — typed hooks and a fetcher, 
   "peerDependencies": {
     "react": ">=18",
     "@tanstack/react-query": ">=5",
-    "appkit": ">=1.0.0 <2.0.0"
+    "@hjtdev/appkit": ">=1.0.0 <2.0.0"
   },
   "devDependencies": {
     "openapi-typescript": "^7.13.0"
@@ -1446,7 +1520,7 @@ openapi-typescript's own `--read-write-markers` flag was considered and **reject
 
 **What stays hand-written**, in `types.ts`, because nothing in an OpenAPI schema can express it — and it's shorter than it used to be, because two of the three things that used to live here now come from `appkit` instead:
 
-- ~~`HttpClient`~~ — moved to `appkit`. Re-exported from this app's own `types.ts` for convenience (`export type { HttpClient } from "appkit"`), never redeclared.
+- ~~`HttpClient`~~ — moved to `appkit`. Re-exported from this app's own `types.ts` for convenience (`export type { HttpClient } from "@hjtdev/appkit"`), never redeclared.
 - ~~The error envelope~~ — moved to `appkit` as `ApiErrorEnvelope` / `ApiErrorCode`. Same reasoning as before (produced by the exception handler at request-handling time, not declared on any serializer, so `drf-spectacular` has no field to introspect) — it just now has one definition instead of one per app.
 - Whatever's left is genuinely app-specific: request/response shapes the schema can't express, if any. Most apps have nothing left to hand-write here at all.
 
@@ -1473,7 +1547,7 @@ export interface ApiClientProviderProps {
   /** Any client satisfying HttpClient — normally the host's frontend/lib/api-client.ts
    *  apiClient, passed in as-is. */
   client: HttpClient;
-  /** basePath per installed app, keyed by the app's own namespace (§1.3) — see
+  /** basePath per installed app, keyed by the app's own namespace (§1.2) — see
    *  "Where basePath comes from now" below. */
   basePaths?: Readonly<Record<string, string>>;
   /** Composable per-request header sources, docs/CONTRACT.md §16 — must be a stable
@@ -1495,7 +1569,7 @@ Each app's own `frontend/src/api/config.ts` does nothing more than bind its name
 
 ```ts
 // frontend/src/api/config.ts — internal, never exported from index.ts
-import { useApiClient } from "appkit";
+import { useApiClient } from "@hjtdev/appkit";
 
 export const useNotificationsConfig = () => useApiClient("notifications", "/api/v1/notifications");
 ```
@@ -1506,7 +1580,7 @@ export const useNotificationsConfig = () => useApiClient("notifications", "/api/
 
 ```tsx
 // host frontend/app/providers.tsx — mounted once, not once per installed app
-import { ApiClientProvider } from "appkit";
+import { ApiClientProvider } from "@hjtdev/appkit";
 import { apiClient } from "@/lib/api-client";
 
 <ApiClientProvider
@@ -1517,7 +1591,7 @@ import { apiClient } from "@/lib/api-client";
 </ApiClientProvider>;
 ```
 
-Namespaces are already collision-free per §1.3, so keys can't collide between apps. The trade-off, stated plainly: the key is stringly typed and unenforced by the compiler — a typo in the host's `basePaths` map silently falls back to the app's own default rather than failing to build, and the requests 404 at runtime instead. That's the price of collapsing N providers into one; it's mitigated by documenting the exact key in the app's README (§8) and by INTEGRATION-GUIDE.md §2 making it an explicit wiring step.
+Namespaces are already collision-free per §1.2, so keys can't collide between apps. The trade-off, stated plainly: the key is stringly typed and unenforced by the compiler — a typo in the host's `basePaths` map silently falls back to the app's own default rather than failing to build, and the requests 404 at runtime instead. That's the price of collapsing N providers into one; it's mitigated by documenting the exact key in the app's README (§8) and by INTEGRATION-GUIDE.md §2 making it an explicit wiring step.
 
 Two alternatives were considered and rejected: a `basePath` argument baked into `useApiClient` at each app's own call site removes the host's ability to choose a different mount point at all; a per-app provider prop (each app back to shipping `<NotificationsProvider basePath="...">`) keeps compile-time checking but reinstates the exact provider-nesting problem this design exists to remove. The escape hatch, for the rare app needing a differently-configured client (an auth app on `credentials: "include"`, say): a second `ApiClientProvider` nested deeper in the tree wins for that subtree, same as any React context.
 
@@ -1526,7 +1600,7 @@ Two alternatives were considered and rejected: a `basePath` argument baked into 
 Every app's frontend has two layers, mirroring the backend's `views.py` + `services.py` split:
 
 - **The manager** (`api/manager.ts`) is a plain class, instance-based — its constructor takes the `HttpClient` and `basePath` a hook read from context, never a static class reaching for a module-level client, since there is no module-level client to reach for (see "SDK-to-host client contract" above). It's the *only* place a raw HTTP call happens — no `fetch`/`axios` call exists anywhere outside this file. It's typed against `types.ts`, and it's never exported from `index.ts` — a host only ever reaches it indirectly, through a hook.
-- **Hooks** (`hooks/*.ts`) are thin `@tanstack/react-query` wrappers around manager methods — never anything more. Each hook calls the app's `useXConfig()` to read the injected `client`/`basePath`, builds the manager with `useMemo` (keyed on `[client, basePath]`, so it isn't reconstructed every render), then wraps `useQuery`/`useMutation` around its methods. A query hook wraps `useQuery` with a stable, namespaced `queryKey` (`["notifications", ...]`, per §1.3); a mutation hook wraps `useMutation` and invalidates the relevant query keys on success. Neither swallows loading/error state — every hook returns the standard react-query result object as-is, so the host UI decides how to render `isLoading`/`isError`, rather than the SDK imposing a spinner or toast opinion. If two hooks share logic (e.g. an error-shape normalizer), factor it into an internal, unexported helper.
+- **Hooks** (`hooks/*.ts`) are thin `@tanstack/react-query` wrappers around manager methods — never anything more. Each hook calls the app's `useXConfig()` to read the injected `client`/`basePath`, builds the manager with `useMemo` (keyed on `[client, basePath]`, so it isn't reconstructed every render), then wraps `useQuery`/`useMutation` around its methods. A query hook wraps `useQuery` with a stable, namespaced `queryKey` (`["notifications", ...]`, per §1.2); a mutation hook wraps `useMutation` and invalidates the relevant query keys on success. Neither swallows loading/error state — every hook returns the standard react-query result object as-is, so the host UI decides how to render `isLoading`/`isError`, rather than the SDK imposing a spinner or toast opinion. If two hooks share logic (e.g. an error-shape normalizer), factor it into an internal, unexported helper.
 
 ```ts
 // frontend/src/api/manager.ts
@@ -1602,7 +1676,7 @@ export function useSendNotification() {
 export { useNotifications, notificationKeys } from "./hooks/useNotifications";
 export { useSendNotification } from "./hooks/useSendNotification";
 export type { Notification, SendNotificationPayload } from "./types";
-export type { HttpClient } from "appkit";
+export type { HttpClient } from "@hjtdev/appkit";
 ```
 
 Exporting the `notificationKeys` factory is deliberate: a host sometimes needs to invalidate this app's cache from its own code (after a cross-app action composed in `frontend/app/`, per `INTEGRATION-GUIDE.md` §4). Without the factory, the host hardcodes the key string and silently breaks when the SDK changes it.

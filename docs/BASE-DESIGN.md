@@ -609,10 +609,8 @@ The host project's CI is smaller than an app package's — it doesn't build whee
 # fork PR) goes green on the first push. SECRET_KEY and FERNET_KEY are generated fresh
 # inside backend-tests rather than read from secrets.*: a value committed to this repo, even
 # in a workflow file, is a value someone eventually copies into a real .env, and this
-# scaffold is copied into every future project. The expected future exception is a
-# private-repo token for installing an app package (APP-DESIGN.md §1.2) — that is a real
-# secret and belongs in secrets.*; adding it later is the documented exception, not a
-# violation of this rule.
+# scaffold is copied into every future project. Every app package in this ecosystem is a
+# public repo, so there is no private-repo credential this CI needs to carry, ever.
 name: CI
 on:
   push: { branches: [main] }
@@ -763,12 +761,6 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: docker/setup-buildx-action@v3
-      # backend/Dockerfile.prod mounts --mount=type=ssh on its uv sync layers, to support
-      # private git app-package refs without ever putting a credential in a layer
-      # (APP-DESIGN.md §1.2). BuildKit treats that mount as optional by default, so it builds
-      # fine with no agent today. The moment this project installs its first private app
-      # package, add a webfactory/ssh-agent (or equivalent) step here loading a deploy key,
-      # and pass --ssh default on the buildx call below — see INTEGRATION-GUIDE.md §2.
       - name: Build production images (proves the prod path still builds)
         run: |
           docker buildx build -f backend/Dockerfile.prod backend --load -t app-backend:ci
@@ -886,7 +878,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 RUN --mount=type=cache,target=/root/.cache/uv \
     --mount=type=bind,source=uv.lock,target=uv.lock \
     --mount=type=bind,source=pyproject.toml,target=pyproject.toml \
-    --mount=type=ssh \
     uv sync --locked --no-install-project --no-default-groups --no-editable
 
 # Layer 2: the project itself. Invalidated by any code change, which is fine — it's fast.
@@ -922,8 +913,7 @@ CMD ["uvicorn", "config.asgi:application", \
 ```
 
 Notes on the deliberate choices:
-- **`git` is installed in the builder only** — it's needed to resolve the `git+https://…` app package refs, and it has no business being in the runtime image.
-- **`--mount=type=ssh`** supports private app package repos without ever putting a credential in a layer (see `APP-DESIGN.md` §1.2). Build with `docker buildx build --ssh default`, or swap to `--mount=type=secret,id=gh_token` for the token flow.
+- **`git` is installed in the builder only** — it's needed to resolve the `git+https://…` app package refs, and it has no business being in the runtime image. No `--mount=type=ssh`/`--mount=type=secret` is needed on the `uv sync` layers: every app package in this ecosystem is a public repo, so a plain `git+https://` ref resolves with no credential at all.
 - **No migrate on boot.** See §9 for why that's a deploy-script step.
 - **`--proxy-headers`** matters because prod binds to `127.0.0.1` behind nginx; without it every client IP in your logs is the proxy's.
 - **Base image digests are pinned automatically**, not as a manual step: `renovate.json` sets `pinDigests: true`, so Renovate opens a PR converting `python:3.14-slim` (and every other base image in the repo — both frontend Dockerfiles, `ghcr.io/astral-sh/uv:0.11`, the compose service images) to `python:3.14-slim@sha256:…` shortly after this workflow first runs, and keeps the digest current from then on. Reproducibility is the whole point of the prod image; a floating tag quietly undermines it. The trade-off — a base image only gets security patches via a Renovate PR, not silently on rebuild — is acceptable only because Renovate is actually running; a project that disables it should drop the digest pins too, or it sits on a frozen image indefinitely.
@@ -946,7 +936,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 RUN --mount=type=cache,target=/root/.cache/uv \
     --mount=type=bind,source=uv.lock,target=uv.lock \
     --mount=type=bind,source=pyproject.toml,target=pyproject.toml \
-    --mount=type=ssh \
     uv sync --locked --no-install-project
 COPY . /app
 RUN mkdir -p /app/logs /app/static /app/staticfiles /app/media

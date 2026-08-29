@@ -17,9 +17,10 @@ FROM node:22-alpine
 WORKDIR /app
 ENV NEXT_TELEMETRY_DISABLED=1
 
-# appkit's frontend half: dist/ is gitignored and there is NO prepare/prepack script (a finding
-# in its own right — see playground/FINDINGS.md) — build it explicitly, here, same as a real
-# host consuming `github:HjtDev/appkit#v1.0.0:frontend` would have to.
+# appkit's frontend half: dist/ is gitignored (frontend/package.json's `prepare` script builds
+# it on `npm install`, same as a real host's `npm install @hjtdev/appkit` would trigger) — built
+# explicitly here anyway, since this dependency is path-linked (`file:../../frontend`, not the
+# registry), so a stale dist/ from a previous build could otherwise linger unrebuilt.
 COPY frontend/ /app/frontend/
 RUN cd /app/frontend && npm install && npm run build
 

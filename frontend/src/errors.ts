@@ -46,6 +46,11 @@ export interface ApiErrorEnvelope {
   };
 }
 
+// Deliberately still keyed "appkit.ApiError", not "@hjtdev/appkit.ApiError" — this is a
+// cross-copy brand identity (see isApiError below), not a package name. Changing it on the
+// v1.0.1 registry rename would make isApiError fail across a tree with one copy published
+// under the old name and one under the new one, which is exactly the failure mode this brand
+// exists to survive. Never rename this key to track a package rename.
 const API_ERROR_BRAND = Symbol.for("appkit.ApiError");
 
 export interface ApiErrorOptions {
@@ -56,6 +61,12 @@ export interface ApiErrorOptions {
   retryAfter?: string | null;
   /** The raw, un-parsed response body — present only on the "unknown_error" path. */
   body?: unknown;
+  /**
+   * The raw wire value of `error.code` when it fell outside the closed `ApiErrorCode` set —
+   * `null` for every known code. Only `apiErrorFromEnvelope` ever sets this (see its own
+   * docstring for why); a caller constructing `ApiError` directly has no reason to.
+   */
+  unrecognizedCode?: string | null;
 }
 
 export class ApiError extends Error {
@@ -65,6 +76,7 @@ export class ApiError extends Error {
   readonly requestId: string | null;
   readonly retryAfter: string | null;
   readonly body?: unknown;
+  readonly unrecognizedCode: string | null;
 
   constructor(message: string, options: ApiErrorOptions) {
     super(message);
@@ -75,6 +87,7 @@ export class ApiError extends Error {
     this.requestId = options.requestId ?? null;
     this.retryAfter = options.retryAfter ?? null;
     this.body = options.body;
+    this.unrecognizedCode = options.unrecognizedCode ?? null;
     // Non-enumerable brand, keyed off `Symbol.for` (which returns the identical symbol across
     // separately-bundled copies of this module) so `isApiError` survives a duplicate-copy
     // install the way `instanceof` would not. Set via `defineProperty` rather than a computed
@@ -113,10 +126,23 @@ const VALID_CODES: ReadonlySet<string> = new Set<ApiErrorCode>([
 
 /**
  * Pure. Validates, does not assume: `data` must be an object with an `error` object whose
- * `code` is one of the ten `ApiErrorCode` values, `message` is a string, `details` is an
- * object, and `request_id` is a string or null. An unrecognised `code` FAILS the guard, rather
- * than passing the envelope through with a code outside the closed set — this is what keeps
- * every downstream `switch (error.code)` exhaustive and type-safe.
+ * `code` is a non-empty string, `message` is a string, `details` is an object, and
+ * `request_id` is a string or null.
+ *
+ * **Deliberately forward-compatible, not exhaustive, on `code`.** README documents that the
+ * backend may carve a new, more specific code out of the `"error"` catch-all in a future minor
+ * version (`docs/CONTRACT.md` §1's four rules) — a host on an older minor must still be able to
+ * parse that response, just without a name for the new code yet. Rejecting the whole envelope
+ * over an unrecognised `code` would lose `message`/`details`/`request_id` too, not just the
+ * code, which is a worse outcome than accepting a wider `code` than `ApiErrorCode` promises.
+ *
+ * This is a deliberate, narrow unsoundness against the `data is ApiErrorEnvelope` return type:
+ * `error.code` is typed as the closed `ApiErrorCode` union, but a value outside that union can
+ * genuinely reach here at runtime. It's safe in practice because the one caller that matters,
+ * `apiErrorFromEnvelope` below, normalises any such value to `"error"` before it can escape as
+ * a typed `ApiErrorCode` anywhere — so a `switch (apiError.code)` downstream stays exhaustive.
+ * A caller invoking this guard directly and then trusting `envelope.error.code` as a member of
+ * the ten-value union without re-checking it against that set inherits this same narrowing.
  */
 export function isApiErrorEnvelope(data: unknown): data is ApiErrorEnvelope {
   if (typeof data !== "object" || data === null || !("error" in data)) return false;
@@ -125,7 +151,7 @@ export function isApiErrorEnvelope(data: unknown): data is ApiErrorEnvelope {
   if (typeof error !== "object" || error === null) return false;
 
   const candidate = error as Record<string, unknown>;
-  if (typeof candidate.code !== "string" || !VALID_CODES.has(candidate.code)) return false;
+  if (typeof candidate.code !== "string" || candidate.code.length === 0) return false;
   if (typeof candidate.message !== "string") return false;
   if (typeof candidate.details !== "object" || candidate.details === null) return false;
   if (candidate.request_id !== null && typeof candidate.request_id !== "string") return false;
@@ -142,10 +168,19 @@ export interface ApiErrorFromEnvelopeInput {
 
 /**
  * Pure. Never throws while constructing an error — this is the single most important
- * behaviour in this module. A non-envelope `body` (HTML, empty, null, valid-JSON-non-envelope,
- * an envelope with an unrecognised code) produces a well-formed `ApiError` with code
- * `"unknown_error"` and `body` set to the raw input, rather than the parser itself failing on
- * the failure path it exists to describe.
+ * behaviour in this module. A non-envelope `body` (HTML, empty, null, valid-JSON-non-envelope)
+ * produces a well-formed `ApiError` with code `"unknown_error"` and `body` set to the raw
+ * input, rather than the parser itself failing on the failure path it exists to describe.
+ *
+ * **A well-shaped envelope with an unrecognised `code`** (a code outside the ten-member
+ * `ApiErrorCode` union — the forward-compatibility gap `isApiErrorEnvelope` above exists to
+ * let through) is handled as a third case, distinct from both the success path and the
+ * `"unknown_error"` path: `code` degrades to `"error"` — the documented catch-all a future,
+ * more specific code would have been carved out of — while `message`, `details`, and
+ * `request_id` are preserved exactly as a known code would be. The raw wire value survives on
+ * `unrecognizedCode`, so a caller that cares can still distinguish "the backend said something
+ * we don't have a name for yet" from an ordinary `"error"` response, without that distinction
+ * ever leaking into the `code` union itself.
  *
  * Header-derived values (`requestId`, `retryAfter`) are read by the caller — the host's
  * concrete client, which has the live `Response` — and passed in; this function never touches
@@ -156,12 +191,14 @@ export function apiErrorFromEnvelope(input: ApiErrorFromEnvelopeInput): ApiError
 
   if (isApiErrorEnvelope(body)) {
     const { error } = body;
+    const recognized = VALID_CODES.has(error.code);
     return new ApiError(error.message, {
       status,
-      code: error.code,
+      code: recognized ? error.code : "error",
       details: error.details,
       requestId: error.request_id ?? requestId,
       retryAfter,
+      unrecognizedCode: recognized ? null : error.code,
     });
   }
 

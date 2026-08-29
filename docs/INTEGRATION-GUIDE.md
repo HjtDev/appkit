@@ -78,40 +78,52 @@ When asked to add a new app package, follow this protocol exactly, in order. Mos
    uv add "git+https://github.com/yourorg/notifications-app.git@v1.4.2#subdirectory=backend"
    ```
    If the app has extras you need: `uv add "notifications-app[sms] @ git+…@v1.4.2#subdirectory=backend"`.
-   This updates `pyproject.toml` *and* `uv.lock`. Both are committed.
-
-   If the ref is a **private** repo, CI's `docker-build` job (`BASE-DESIGN.md` §7) needs an
-   SSH agent from this point on: add a `webfactory/ssh-agent` (or equivalent) step loading a
-   deploy key, and pass `--ssh default` on the `docker buildx build` calls — `backend/Dockerfile.prod`
-   already mounts `--mount=type=ssh` for exactly this, but the mount is optional until the
-   workflow actually forwards an agent (`APP-DESIGN.md` §1.2).
+   This updates `pyproject.toml` *and* `uv.lock`. Both are committed. `git` installs need no
+   authentication — every package in this ecosystem is public.
 
    Every app depends on `appkit` (`APP-DESIGN.md` §1.1), and `uv` resolves that transitively —
    there's no separate `uv add appkit` step on the backend half. The one thing to check if that
-   resolution fails: `appkit` isn't published to a package index, so the *host's* own
-   `[tool.uv.sources]` has to name where it comes from (`uv` doesn't read a transitive
-   dependency's own `[tool.uv.sources]` block, only the workspace root's):
+   resolution fails: appkit's backend half isn't published to a package index either (only its
+   frontend half is — see step 3), so the *host's* own `[tool.uv.sources]` has to name where it
+   comes from (`uv` doesn't read a transitive dependency's own `[tool.uv.sources]` block, only
+   the workspace root's):
    ```toml
    # host backend/pyproject.toml
    [tool.uv.sources]
-   appkit = { git = "https://github.com/yourorg/appkit.git", tag = "v1.0.0", subdirectory = "backend" }
+   appkit = { git = "https://github.com/HjtDev/appkit.git", tag = "v1.0.1", subdirectory = "backend" }
    ```
    Add this once, the first time any app is installed; bump the `tag` only when deliberately
-   upgrading `appkit` itself (§2.1). If `appkit` is later published to a private index instead,
-   this step drops out entirely — a plain `appkit>=1.0,<2.0` resolves normally.
+   upgrading `appkit` itself (§2.1).
 
-3. **Install `appkit`'s frontend half, if this is the first app being installed.** Every SDK declares `"appkit": ">=1.0.0 <2.0.0"` as a `peerDependency` (`APP-DESIGN.md` §12) rather than bundling it, for the same reason `react` and `@tanstack/react-query` are peer deps: npm can't dedupe two different `github:org/appkit#vX:frontend` specs into one copy, and two copies means two separate React contexts — `useApiClient` would silently return `null` in half the tree. So the host installs it once, explicitly, at the highest version any installed app's peer range requires:
+3. **Install `@hjtdev/appkit`'s frontend half from the npm registry, if this is the first app
+   being installed.** Every SDK declares `"@hjtdev/appkit": ">=1.0.0 <2.0.0"` as a
+   `peerDependency` (`APP-DESIGN.md` §12) rather than bundling it, for the same reason `react`
+   and `@tanstack/react-query` are peer deps: bundling it would give a host two separate copies —
+   two React contexts — and `useApiClient` would silently return `null` in half the tree. So the
+   host installs it once, explicitly, at the highest version any installed app's peer range
+   requires:
    ```bash
    cd frontend
-   npm install "github:yourorg/appkit#v1.2.0:frontend"
+   npm install @hjtdev/appkit
    ```
-   Already installed and satisfies every app's peer range? Skip this step.
+   Already installed and satisfies every app's peer range? Skip this step. Note this is a
+   **registry** install, unlike the app's own frontend half in step 4 below — appkit publishes
+   to npm specifically because a git subdirectory install (`github:org/pkg#vX:frontend`) doesn't
+   work in npm the way it works in `uv`: the tag and subdirectory are silently dropped, or (with
+   the `::path:` form) the entire repository root installs instead of just `frontend/`. See
+   `README.md`'s "Installation — frontend" for the full explanation.
 
-4. **Install the frontend half at the same tag:**
+4. **Install the app's own frontend half**, pinned to the same tag as its backend half. If the
+   app publishes to a registry (recommended — see the note above), that looks like:
    ```bash
-   npm install "github:yourorg/notifications-app#v1.4.2:frontend"
+   npm install @yourorg/notifications-app@1.4.2
    ```
-   The tags must match. A mismatched pair is the single most likely cause of "the hook returns `undefined` for a field the API clearly sends."
+   If it doesn't yet and still ships via git, be aware `github:yourorg/notifications-app#v1.4.2:frontend`
+   has the same tag/subdirectory-dropping failure mode `appkit` itself hit at v1.0.0 — verify the
+   install actually resolved the tagged `frontend/` tree (`npm ls <package>` should show a
+   version, not `main`'s) before trusting it. Either way, the versions must match. A mismatched
+   pair is the single most likely cause of "the hook returns `undefined` for a field the API
+   clearly sends."
 
 5. **Copy the configuration block from the app's `README.md`** into `backend/config/settings.py` — `INSTALLED_APPS`, `MIDDLEWARE` (if any), its `REST_FRAMEWORK['DEFAULT_THROTTLE_RATES']` entries, and its settings dict (e.g. `NOTIFICATIONS = {...}`). Copy it verbatim; do not write these from memory or infer them from the package's source. Only adapt naming if there's a real collision, and if there is, note it in `CLAUDE.md` (§8) because it becomes a permanent local deviation.
 
@@ -138,7 +150,7 @@ When asked to add a new app package, follow this protocol exactly, in order. Mos
 11. **Mount `appkit`'s shared provider**, if it isn't mounted yet, in `frontend/app/providers.tsx` — once for the whole host, not once per app — and add this app's namespace to its `basePaths` map (the SDK-to-host client contract, `APP-DESIGN.md` §12):
     ```tsx
     // frontend/app/providers.tsx
-    import { ApiClientProvider } from "appkit";
+    import { ApiClientProvider } from "@hjtdev/appkit";
     import { apiClient } from "@/lib/api-client";
 
     // ... inside the existing Providers component, nested under QueryClientProvider:

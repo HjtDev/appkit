@@ -123,7 +123,7 @@ Produce:
 3. services.py — the public callables, with full signatures and return types. Same reasoning:
    this is the surface hosts couple to.
 4. Endpoints — public and admin, method, path, permission class, throttle scope (namespaced
-   per §1.3), request/response shape.
+   per `APP-DESIGN.md` §1.2), request/response shape.
 5. Settings dict keys with defaults (→ conf.py) and .env keys marked required or optional.
 6. Frontend hooks — name, what it wraps, query keys, invalidation behavior.
 7. Celery/django.tasks tasks, and any recommended periodic schedule.
@@ -265,7 +265,7 @@ Phase 4: the API. docs/APP-DESIGN.md §4 and §5, plus docs/CONTRACT.md item 4.
 Implement serializers.py, permissions.py, views.py, admin_views.py, urls.py, urls_admin.py.
 
 Every view, without exception:
-- a namespaced throttle_scope (§1.3)
+- a namespaced throttle_scope (`APP-DESIGN.md` §1.2)
 - a complete @extend_schema: summary, description, request/response serializers, and
   tags=["notifications"] or tags=["notifications-admin"]
 - a real permission class — object-level, not just class-level, so one user can't reach
@@ -300,10 +300,14 @@ passes against broken code is common and worthless); `--fail-on-warn` is clean.
 Phase 5: the frontend half. docs/APP-DESIGN.md §12 and docs/CONTRACT.md item 6.
 
 Create in frontend/:
-- package.json per §12's excerpt — react, @tanstack/react-query, AND appkit as
+- package.json per §12's excerpt — react, @tanstack/react-query, AND @hjtdev/appkit as
   peerDependencies ONLY (unless this repo IS appkit — see §0), openapi-typescript as a
   devDependency, a generate:types script, an exports map with just ".", files: ["dist"],
-  version matching backend/pyproject.toml
+  version matching backend/pyproject.toml. If this repo IS appkit: `name` is the scoped
+  `@hjtdev/appkit` (the registry publish target, docs/CONTRACT.md §22), plus `publishConfig:
+  { access: "public", provenance: true }`, a `repository` field, and a `prepare` script that
+  builds `dist/` — none of which apply to an ordinary app package, which installs by git tag,
+  not registry.
 - Run npm run generate:types (needs backend/schema.yml from Phase 4) to produce
   src/schema.d.ts. Never hand-edit this file — it's regenerated, not written.
 - tsconfig.json (strict), tsconfig.build.json, vitest.config.ts, eslint config
@@ -312,7 +316,7 @@ Create in frontend/:
   whatever app-specific shape genuinely can't come from the schema, per §12's "Generated
   types" and "What stays hand-written". Do NOT declare HttpClient or an error-envelope type
   here — both come from appkit now; re-export HttpClient if convenient
-  (export type { HttpClient } from "appkit"), never redeclare it.
+  (export type { HttpClient } from "@hjtdev/appkit"), never redeclare it.
 - src/api/config.ts — NOT a provider. One internal binding of this app's namespace and
   default basePath to appkit's shared useApiClient hook, per §12's "SDK-to-host client
   contract": `export const useNotificationsConfig = () => useApiClient("notifications",
@@ -338,15 +342,15 @@ Run npx tsc --noEmit, npm run lint, npm run test, npm run build. Paste all four.
 `git diff --exit-code src/schema.d.ts` after re-running `generate:types` is clean (the CI
 check from §10.1 — worth running now rather than finding out in CI).
 
-**Review for:** `react`, `@tanstack/react-query`, or `appkit` accidentally in `dependencies`
-instead of `peerDependencies` (causes two-copies-of-React-or-appkit bugs in hosts that are
-miserable to debug — for `appkit` specifically, `useApiClient` starts returning `null` in
-half the tree); the manager or this app's own config hook (`useXConfig`) leaking through
-`index.ts`; a `NotificationsProvider` or any other provider being exported at all — there
-shouldn't be one; the manager built as a static class instead of constructed via `useMemo`
-from the injected client; `HttpClient` or the error envelope redeclared in `types.ts` instead
-of imported from `appkit` — that's the hand-written half quietly regaining the drift risk
-generation (and now `appkit`) exists to remove.
+**Review for:** `react`, `@tanstack/react-query`, or `@hjtdev/appkit` accidentally in
+`dependencies` instead of `peerDependencies` (causes two-copies-of-React-or-appkit bugs in
+hosts that are miserable to debug — for `@hjtdev/appkit` specifically, `useApiClient` starts
+returning `null` in half the tree); the manager or this app's own config hook (`useXConfig`)
+leaking through `index.ts`; a `NotificationsProvider` or any other provider being exported at
+all — there shouldn't be one; the manager built as a static class instead of constructed via
+`useMemo` from the injected client; `HttpClient` or the error envelope redeclared in `types.ts`
+instead of imported from `@hjtdev/appkit` — that's the hand-written half quietly regaining the
+drift risk generation (and now appkit) exists to remove.
 
 ### Phase 6 — Playground
 
@@ -418,20 +422,26 @@ one test of README quality that means anything.
 ```
 Phase 8: CI and release.
 
-1. .github/workflows/ci.yml — the ~10-line caller from docs/APP-DESIGN.md §10.2. If the org
-   reusable workflow doesn't exist yet, write it in full per §10.1 and tell me it needs to be
-   committed to yourorg/.github separately.
+1. .github/workflows/ci.yml — the ~10-line caller from docs/APP-DESIGN.md §10.2, with
+   `publish-npm: true` in the `with:` block. If the org reusable workflow doesn't exist yet,
+   write it in full per §10.1 (including the OIDC-based `publish-npm` job, §11.1) and tell me
+   it needs to be committed to yourorg/.github separately.
 2. CHANGELOG.md — Keep a Changelog format per §11.3, with a 1.0.0 entry.
 3. Verify version lockstep: backend/pyproject.toml, frontend/package.json, CHANGELOG.md all
    at 1.0.0.
 4. Walk the security checklist in §9 item by item and report each as verified-or-not, with
    the evidence. Don't mark anything verified you haven't actually checked.
 5. Walk the frontend security checklist in §12 the same way.
+6. One-time bootstrap only, before the first tag: `cd frontend && npm run build && npm publish
+   --access public` by hand — npm trusted publishing can only be configured on a package that
+   already exists — then link the repo as a Trusted Publisher on npmjs.com (package → Settings).
+   Every tag after that publishes from CI with no stored credential.
 
 Then give me the exact commands to tag and push v1.0.0.
 ```
 
-**Verify:** CI green on a PR; then tag, push, and confirm the tag-match assertion passes.
+**Verify:** CI green on a PR; the frontend package appears on the npm registry under its
+published name after the tag push; then tag, push, and confirm the tag-match assertion passes.
 
 ### Phase 9 — Install it into a real host
 
@@ -527,8 +537,8 @@ Ranked by how often they happen and how much they cost:
 | Templates/translations missing after install | package data not declared (§2) | Looks like a host misconfiguration; wastes hours on the wrong side |
 | App works in the first host, breaks in the second | an assumption about host structure (`tools/`, a settings key, a URL prefix) | The failure the whole architecture exists to prevent |
 | Two copies of React in a host | `react` in `dependencies` not `peerDependencies` (§12) | Bizarre hook errors with no obvious cause |
-| Two copies of `appkit` in a host | `appkit` in `dependencies` not `peerDependencies` on the frontend half (§12) | Same shape as the React row, now equally likely since every app declares `appkit` — `useApiClient` returns `null` in half the tree |
-| Throttle scope collides with another app | scope not namespaced (§1.3) | Two correct apps rate-limit each other |
+| Two copies of `appkit` in a host | `@hjtdev/appkit` in `dependencies` not `peerDependencies` on the frontend half (§12) | Same shape as the React row, now equally likely since every app declares `@hjtdev/appkit` — `useApiClient` returns `null` in half the tree |
+| Throttle scope collides with another app | scope not namespaced (`APP-DESIGN.md` §1.2) | Two correct apps rate-limit each other |
 | `factory-boy` in production installs | factories' dependency in `[project.dependencies]` | Ships test tooling to every host |
 
 Every one of these is caught by something in `APP-DESIGN.md` §10's CI —

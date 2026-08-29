@@ -12,7 +12,7 @@ name = "appkit"
 # written into code. Bumped to 1.0.0 here, deliberately, at Phase 8 — not incrementally per
 # phase, since nothing consumed the intermediate numbers. Must match frontend/package.json and
 # CHANGELOG.md; CI's version-lockstep job enforces it from here on.
-version = "1.0.0"
+version = "1.0.1"
 description = "Shared Django + DRF foundation every app package and host in this ecosystem depends on — cache, mixins, error envelope, request-ID plumbing, and the HttpClient/provider contract. Not an installable feature; the thing every other app is built on."
 requires-python = ">=3.13"
 license = "MIT"

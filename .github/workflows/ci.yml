@@ -13,6 +13,14 @@ on:
     tags: ["v*"]
   pull_request:
 
+# The repo's default GITHUB_TOKEN permissions are read-only. app-package-ci.yml's publish-npm
+# job requests id-token: write (for OIDC trusted publishing) — a reusable workflow's job can
+# only downscope from what the CALLER grants, never escalate past it, so without this block the
+# workflow_call fails validation before any job runs at all (a zero-job "startup_failure").
+permissions:
+  contents: read
+  id-token: write
+
 jobs:
   ci:
     uses: HjtDev/.github/.github/workflows/app-package-ci.yml@main
@@ -30,4 +38,8 @@ jobs:
         appkit/py.typed
         appkit/locale/fa/LC_MESSAGES/django.mo
       forbid-runtime-dependencies: true
+      # Publishes frontend/ to the npm registry as @hjtdev/appkit on a v* tag push, via OIDC
+      # trusted publishing — no NPM_TOKEN anywhere (APP-DESIGN.md §11.1). One-time bootstrap
+      # required before this does anything: see CHANGELOG.md's v1.0.1 entry.
+      publish-npm: true
     secrets: inherit
