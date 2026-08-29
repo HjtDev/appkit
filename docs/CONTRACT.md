@@ -2035,7 +2035,7 @@ even when this safeguard's warning goes unread.
   "type": "module",
   "sideEffects": false,
   "repository": { "type": "git", "url": "git+https://github.com/HjtDev/appkit.git", "directory": "frontend" },
-  "publishConfig": { "access": "public", "provenance": true },
+  "publishConfig": { "access": "public" },
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": { ".": { "types": "./dist/index.d.ts", "import": "./dist/index.js" } },
@@ -2063,10 +2063,19 @@ even when this safeguard's warning goes unread.
   already registered on the public npm registry (v1.0.1 as of this writing too, coincidentally),
   so a scoped name is not a style choice but the only name available. `publishConfig.access:
   "public"` is required on every publish of a scoped package — npm otherwise defaults a scoped
-  package to a *private* (paid) publish and the release fails. `publishConfig.provenance: true`
-  attaches a build-provenance attestation when published from CI (`APP-DESIGN.md` §11.1's
-  OIDC-based publish job); it's a no-op, not an error, on a manual `npm publish` from a
-  workstation. `repository` is required for provenance to link back to this source.
+  package to a *private* (paid) publish and the release fails.
+  **`provenance` is deliberately NOT in `publishConfig`.** It was there in an earlier draft, on
+  the theory that it would be a harmless no-op outside CI — verified wrong the hard way, while
+  bootstrapping the very first publish of this package: `publishConfig.provenance: true` makes
+  `npm publish` unconditionally attempt Sigstore provenance generation, which **hard-fails**
+  (`npm error EUSAGE Automatic provenance generation not supported for provider: null`) the
+  moment it isn't run inside a supported CI OIDC context — including the one-time manual
+  bootstrap publish every trusted-publishing setup requires (`APP-DESIGN.md` §11.1), since
+  trusted publishing can't be configured on a package that doesn't exist yet. `--provenance` is
+  instead passed as an explicit CLI flag only on the CI job's own `npm publish` step
+  (`APP-DESIGN.md` §10.1) — provenance where it's actually verifiable, no silent requirement
+  that every future manual publish remember `--no-provenance`. `repository` is still required,
+  for that CI-flag provenance to link back to this source.
 - **`prepare` builds `dist/` before `npm publish` packs it** — the same script a git-installed
   copy would need to run for itself, kept here so `npm publish`'s local pack step and a
   contributor's own local install never diverge in what gets shipped.

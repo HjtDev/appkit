@@ -11,8 +11,7 @@
     "directory": "frontend"
   },
   "publishConfig": {
-    "access": "public",
-    "provenance": true
+    "access": "public"
   },
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
