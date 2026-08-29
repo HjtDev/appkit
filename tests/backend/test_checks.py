@@ -9,6 +9,8 @@ settings before any positive case is tested.
 
 from __future__ import annotations
 
+import sys
+
 from django.test import override_settings
 
 from appkit import checks
@@ -33,6 +35,7 @@ def test_no_messages_on_a_correctly_configured_host() -> None:
         *checks.check_unknown_settings_keys(app_configs=None),
         *checks.check_throttle_scopes(app_configs=None),
         *checks.check_logging_filter(app_configs=None),
+        *checks.check_num_proxies_throttle_agreement(app_configs=None),
     ]
     assert all_messages == []
 
@@ -315,3 +318,152 @@ def test_no_crash_on_unimportable_filter_and_other_entries_still_evaluated(monke
         },
     )
     assert checks.check_logging_filter(app_configs=None) == []
+
+
+# --------------------------------------------------------------------------- W006
+
+# Custom throttle classes referenced below live in tests.backend.throttles_w006, not here — a
+# module-scope `from rest_framework.throttling import SimpleRateThrottle` in THIS file would
+# crash pytest's collection phase before pytest-django configures settings, since
+# SimpleRateThrottle's class body reads api_settings.DEFAULT_THROTTLE_RATES at class-definition
+# time. See that module's own docstring.
+
+
+def test_no_w006_when_num_proxies_matches_trusted_proxy_count() -> None:
+    """Matches APPKIT["TRUSTED_PROXY_COUNT"] == 1 from the baseline test settings — silent even
+    with a throttle class configured, since the "unset" branch only applies when NUM_PROXIES is
+    None.
+    """
+    with override_settings(
+        REST_FRAMEWORK={
+            "EXCEPTION_HANDLER": "appkit.exceptions.standard_exception_handler",
+            "NUM_PROXIES": 1,
+            "DEFAULT_THROTTLE_CLASSES": ["rest_framework.throttling.AnonRateThrottle"],
+        }
+    ):
+        messages = checks.check_num_proxies_throttle_agreement(app_configs=None)
+        assert "appkit.W006" not in _ids(messages)
+
+
+def test_w006_when_num_proxies_disagrees_with_trusted_proxy_count() -> None:
+    """Fires regardless of throttle classes — client_ip() and get_ident() would trust a
+    different number of hops even though NUM_PROXIES is "configured", not unset.
+    """
+    with override_settings(
+        REST_FRAMEWORK={
+            "EXCEPTION_HANDLER": "appkit.exceptions.standard_exception_handler",
+            "NUM_PROXIES": 2,
+        }
+    ):
+        messages = checks.check_num_proxies_throttle_agreement(app_configs=None)
+        assert "appkit.W006" in _ids(messages)
+        assert any("2" in str(m.msg) and "1" in str(m.msg) for m in messages)
+
+
+def test_no_w006_when_num_proxies_unset_and_no_throttle_classes_anywhere() -> None:
+    """Default test-tree URLconf mounts only an unthrottled `ping` view, and the baseline
+    REST_FRAMEWORK sets no DEFAULT_THROTTLE_CLASSES — nothing spoofable is configured at all.
+    """
+    assert "appkit.W006" not in _ids(checks.check_num_proxies_throttle_agreement(app_configs=None))
+
+
+def test_w006_when_num_proxies_unset_and_scoped_rate_throttle_configured() -> None:
+    with override_settings(
+        REST_FRAMEWORK={
+            "EXCEPTION_HANDLER": "appkit.exceptions.standard_exception_handler",
+            "DEFAULT_THROTTLE_CLASSES": ["rest_framework.throttling.ScopedRateThrottle"],
+        }
+    ):
+        assert "appkit.W006" in _ids(checks.check_num_proxies_throttle_agreement(app_configs=None))
+
+
+def test_w006_when_num_proxies_unset_and_anon_rate_throttle_configured() -> None:
+    """Not just ScopedRateThrottle — every SimpleRateThrottle subclass shares the same
+    get_ident() hazard.
+    """
+    with override_settings(
+        REST_FRAMEWORK={
+            "EXCEPTION_HANDLER": "appkit.exceptions.standard_exception_handler",
+            "DEFAULT_THROTTLE_CLASSES": ["rest_framework.throttling.AnonRateThrottle"],
+        }
+    ):
+        assert "appkit.W006" in _ids(checks.check_num_proxies_throttle_agreement(app_configs=None))
+
+
+def test_w006_when_num_proxies_unset_and_a_custom_subclass_is_configured() -> None:
+    with override_settings(
+        REST_FRAMEWORK={
+            "EXCEPTION_HANDLER": "appkit.exceptions.standard_exception_handler",
+            "DEFAULT_THROTTLE_CLASSES": ["tests.backend.throttles_w006.CustomSimpleRateThrottle"],
+        }
+    ):
+        assert "appkit.W006" in _ids(checks.check_num_proxies_throttle_agreement(app_configs=None))
+
+
+def test_no_w006_when_throttle_class_overrides_get_ident() -> None:
+    with override_settings(
+        REST_FRAMEWORK={
+            "EXCEPTION_HANDLER": "appkit.exceptions.standard_exception_handler",
+            "DEFAULT_THROTTLE_CLASSES": [
+                "tests.backend.throttles_w006.CustomThrottleWithOwnGetIdent"
+            ],
+        }
+    ):
+        messages = checks.check_num_proxies_throttle_agreement(app_configs=None)
+        assert "appkit.W006" not in _ids(messages)
+
+
+def test_no_w006_when_configured_class_is_not_a_simple_rate_throttle() -> None:
+    with override_settings(
+        REST_FRAMEWORK={
+            "EXCEPTION_HANDLER": "appkit.exceptions.standard_exception_handler",
+            "DEFAULT_THROTTLE_CLASSES": ["tests.backend.throttles_w006.NotAThrottleAtAll"],
+        }
+    ):
+        messages = checks.check_num_proxies_throttle_agreement(app_configs=None)
+        assert "appkit.W006" not in _ids(messages)
+
+
+def test_no_w006_with_unimportable_throttle_class_string() -> None:
+    with override_settings(
+        REST_FRAMEWORK={
+            "EXCEPTION_HANDLER": "appkit.exceptions.standard_exception_handler",
+            "DEFAULT_THROTTLE_CLASSES": ["this.does.not.exist.AtAll"],
+        }
+    ):
+        assert checks.check_num_proxies_throttle_agreement(app_configs=None) == []
+
+
+def test_w006_catches_a_per_view_throttle_class_with_no_global_default() -> None:
+    """No REST_FRAMEWORK["DEFAULT_THROTTLE_CLASSES"] anywhere — only a view's own
+    `throttle_classes` attribute, walked via ROOT_URLCONF. The raw-settings half of
+    `_configured_throttle_classes` alone would never see this.
+    """
+    with override_settings(
+        ROOT_URLCONF="tests.backend.urls_w006",
+        REST_FRAMEWORK={"EXCEPTION_HANDLER": "appkit.exceptions.standard_exception_handler"},
+    ):
+        assert "appkit.W006" in _ids(checks.check_num_proxies_throttle_agreement(app_configs=None))
+
+
+def test_no_w006_with_unimportable_root_urlconf() -> None:
+    with override_settings(
+        ROOT_URLCONF="this.module.does.not.exist",
+        REST_FRAMEWORK={"EXCEPTION_HANDLER": "appkit.exceptions.standard_exception_handler"},
+    ):
+        assert checks.check_num_proxies_throttle_agreement(app_configs=None) == []
+
+
+def test_no_w006_when_drf_throttling_itself_is_unimportable(monkeypatch) -> None:
+    """Simulates rest_framework.throttling being unimportable — a much bigger problem than this
+    check can meaningfully report, so it must degrade to "nothing to warn about" rather than
+    crash manage.py. Same sys.modules-sabotage pattern as test_files.py's missing-Pillow test.
+    """
+    monkeypatch.setitem(sys.modules, "rest_framework.throttling", None)
+    with override_settings(
+        REST_FRAMEWORK={
+            "EXCEPTION_HANDLER": "appkit.exceptions.standard_exception_handler",
+            "DEFAULT_THROTTLE_CLASSES": ["rest_framework.throttling.AnonRateThrottle"],
+        }
+    ):
+        assert checks.check_num_proxies_throttle_agreement(app_configs=None) == []

@@ -30,4 +30,8 @@ jobs:
         appkit/py.typed
         appkit/locale/fa/LC_MESSAGES/django.mo
       forbid-runtime-dependencies: true
+      # Publishes frontend/ to the npm registry as @hjtdev/appkit on a v* tag push, via OIDC
+      # trusted publishing — no NPM_TOKEN anywhere (APP-DESIGN.md §11.1). One-time bootstrap
+      # required before this does anything: see CHANGELOG.md's v1.0.1 entry.
+      publish-npm: true
     secrets: inherit

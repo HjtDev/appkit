@@ -187,7 +187,7 @@ All **Public**.
 - `cache_endpoint(...)` — the new decorator wrapping a DRF view method (`list`/`retrieve`) the
   way `CachedListMixin` wraps `ListAPIView.list`, for views that aren't plain list views.
   - `namespace` is **required, no default** — an unprefixed key is exactly the two-apps-collide
-    scenario `APP-DESIGN.md` §1.3 exists to prevent, so there is no safe default to fall back to.
+    scenario `APP-DESIGN.md` §1.2 exists to prevent, so there is no safe default to fall back to.
   - `per_user=True` is the load-bearing default. **Non-obvious failure path:** with
     `per_user=False` on a permission-gated view, user A's response is served verbatim to user
     B — an authorization bypass via the cache layer, not a cache bug. `per_user=False` is valid
@@ -215,7 +215,7 @@ class CachedListMixin:
 
 - **Changed from the scaffold: `cache_namespace` is required**, not `"" -> falls back to the
   view's class name`. Two apps each shipping a `NotificationListView` collide in the host's one
-  shared Redis instance — precisely the collision `APP-DESIGN.md` §1.3 exists to prevent — and a
+  shared Redis instance — precisely the collision `APP-DESIGN.md` §1.2 exists to prevent — and a
   class-name-derived default is a silent trap the moment two apps use a common name. There is no
   host-wide-safe default, so there isn't one.
 - Must precede the generic view in MRO (`class MyListView(CachedListMixin, generics.ListAPIView)`)
@@ -729,7 +729,7 @@ functions, zero dependencies) rather than grown into a currency/locale framework
 def throttle_scope(app_namespace: str, action: str) -> str: ...
 ```
 
-**Public.** Enforces `APP-DESIGN.md` §1.3's prefix convention mechanically instead of leaving
+**Public.** Enforces `APP-DESIGN.md` §1.2's prefix convention mechanically instead of leaving
 every app to remember it by hand: `throttle_scope("notifications", "list")` →
 `"notifications_list"`. **Raises `ValueError`** if either argument is empty or contains an
 underscore itself (which would make the resulting scope ambiguous to split back apart, and more
@@ -783,7 +783,7 @@ both wrong for this ecosystem:
 **Every fixture name below carries an `appkit_` prefix — decided during implementation (Phase
 4), and stated here as a correction to an earlier draft of this section, which used bare names
 (`api_client`, `user`, `admin_user`, `auth_client`, `admin_client`, `frozen_request_id`,
-`clear_cache`).** `APP-DESIGN.md` §1.3's namespacing rule ("anything appkit contributes to a
+`clear_cache`).** `APP-DESIGN.md` §1.2's namespacing rule ("anything appkit contributes to a
 shared namespace carries a prefix, no exceptions") applies to pytest's fixture registry exactly
 as much as it applies to cache keys or settings keys — it's the same kind of flat, shared
 namespace, just one pytest owns instead of Django's cache backend. The concrete evidence this
@@ -988,11 +988,12 @@ buried here alone.
 
 ## 6. System checks registered by `AppKitConfig.ready()`
 
-**Six functions, seven IDs** — the mapping is stated once here, not left as an inference from the
-`ready()` code block: `appkit.E001` → `check_request_id_middleware`; `appkit.E002` and
+**Seven functions, eight IDs** — the mapping is stated once here, not left as an inference from
+the `ready()` code block: `appkit.E001` → `check_request_id_middleware`; `appkit.E002` and
 `appkit.W001` → `check_exception_handler` (one function, since both inspect the same setting);
 `appkit.W002` → `check_middleware_order`; `appkit.W003` → `check_unknown_settings_keys`;
-`appkit.W004` → `check_throttle_scopes`; `appkit.W005` → `check_logging_filter`.
+`appkit.W004` → `check_throttle_scopes`; `appkit.W005` → `check_logging_filter`; `appkit.W006` →
+`check_num_proxies_throttle_agreement`.
 
 | ID | Level | Fires when | Why this one is silent otherwise |
 |---|---|---|---|
@@ -1003,6 +1004,7 @@ buried here alone.
 | `appkit.W003` | Warning | The host's `APPKIT` dict contains a key not present in `appkit.conf.DEFAULTS`. | A typo (`APPKIT = {"CACHE_TIMOUT": 30}`) would otherwise silently use the *default* `CACHE_TIMEOUT` forever, with the typo'd key simply ignored — exactly the class of bug `conf.py`'s whole design (§3.5) exists to prevent, closed the rest of the way by a check that actually looks at what keys were provided. |
 | `appkit.W004` | Warning | A view reachable by walking `ROOT_URLCONF` declares a `throttle_scope` string with no matching entry in `REST_FRAMEWORK["DEFAULT_THROTTLE_RATES"]`. | `APP-DESIGN.md` §7.4 names this exact failure by description: "a typo'd `throttle_scope` fails open, silently" — DRF only raises `AssertionError` for a missing rate at request time, per request, so it can ship to production and pass every test that doesn't happen to exercise that exact view under throttling. |
 | `appkit.W005` | Warning | `settings.LOGGING` is configured (and `LOGGING_CONFIG` is not `None`), but no handler in it references a filter resolving to `appkit.request_id.RequestIDFilter` (or a subclass of it). Skipped entirely when `LOGGING` is unset/empty or `LOGGING_CONFIG is None`. | The middleware runs and the contextvar is set regardless, so nothing errors — but any handler reading the raw `LogRecord` (a `%`-style file handler, a mail-admins handler) stamps `request_id="-"` on every line forever. This is exactly the silent-degradation shape the other checks exist to catch, normally only discovered while correlating a production incident. |
+| `appkit.W006` | Warning | Two independent conditions, both reported at this ID with distinct messages: (a) `REST_FRAMEWORK["NUM_PROXIES"]` is set and disagrees with `APPKIT["TRUSTED_PROXY_COUNT"]`; (b) `NUM_PROXIES` is unset (`None`, whether omitted or explicit) while any `SimpleRateThrottle` subclass is configured, globally via `DEFAULT_THROTTLE_CLASSES` or on any view reached by walking `ROOT_URLCONF`. | DRF's `SimpleRateThrottle.get_ident()` does its own `X-Forwarded-For` parsing that appkit has no way to inject `client_ip()`'s trusted-hop logic into. With `NUM_PROXIES` unset, `get_ident()` joins the **entire** header into the bucket key — not the untrusted leftmost entry, the whole chain — so a client prepending fake hops gets a fresh bucket on every request, making the throttle a no-op for exactly the client it exists to slow down. |
 
 **`appkit.W004`'s detection scope, stated plainly so a clean run isn't misread as full
 coverage.** Reliably detected: `throttle_scope` as a class attribute on a class-based view reached
@@ -1018,6 +1020,33 @@ no rate for is reported exactly the same regardless of whether it looks like `ap
 `DEFAULT_THROTTLE_RATES` entry that no reachable view's `throttle_scope` ever uses. Usually a typo
 or a leftover from a removed app, the same class of bug as W004's forward direction — recorded here
 as an open proposal rather than added silently, for a decision in a future phase.
+
+**`appkit.W006`'s trigger is deliberately every `SimpleRateThrottle` subclass, not only
+`ScopedRateThrottle`.** An earlier draft of this check considered scoping it to
+`ScopedRateThrottle` alone, since it pairs naturally with `appkit.throttling.throttle_scope`
+(§2.15) — but the spoofable-bucket flaw lives in `SimpleRateThrottle.get_ident()` itself, and
+every subclass inherits it unchanged: `AnonRateThrottle`, `UserRateThrottle`, and any host-defined
+subclass are exactly as spoofable as `ScopedRateThrottle` with `NUM_PROXIES` unset. A host using
+only `AnonRateThrottle` would have gotten silence from the narrower version for the identical
+hazard. Detection resolves each configured class and checks `issubclass(cls, SimpleRateThrottle)`
+rather than name-matching against DRF's own built-ins, specifically so a host's own subclass is
+covered too.
+
+**Two further scoping decisions, both leaving stated gaps rather than false confidence:**
+
+- **A subclass overriding `get_ident` is excluded** — checked as `cls.get_ident is
+  BaseThrottle.get_ident`, `True` for every DRF built-in and any subclass that doesn't touch it,
+  `False` the moment one does. DRF's whole-header-join behaviour isn't in play for a class that
+  parses `X-Forwarded-For` itself, and warning about it would be a false positive this check
+  cannot resolve without re-implementing that subclass's own logic.
+- **Throttle classes are gathered two ways**, sharing one `ROOT_URLCONF` traversal with
+  `appkit.W004` (`_collect_throttle_info`): the raw `REST_FRAMEWORK["DEFAULT_THROTTLE_CLASSES"]`
+  setting, and each reachable view's own `throttle_classes` attribute — the second is what catches
+  a host that sets `throttle_classes` directly on a view with no global default configured at all,
+  which reading the raw setting alone would never see. **Not detectable, and not attempted**,
+  matching W004's own stated limit: a throttle wired up via `get_throttles()` overridden at
+  runtime, or via a permission class doing its own rate limiting outside DRF's throttle machinery
+  entirely. A clean `appkit.W006` run is not proof neither exists somewhere.
 
 **`appkit.W005` and §12's cut `LOGGING`-fragment constant are not the same thing, despite both
 touching `LOGGING`.** The constant §12 rejected would have been appkit *shipping* a fragment of
@@ -1422,7 +1451,7 @@ export interface ApiClientProviderProps {
   /** Any client satisfying HttpClient — normally the host's frontend/lib/api-client.ts
    *  apiClient, passed in as-is. */
   client: HttpClient;
-  /** basePath per installed app, keyed by the app's own namespace (§1.3 of APP-DESIGN.md). */
+  /** basePath per installed app, keyed by the app's own namespace (§1.2 of APP-DESIGN.md). */
   basePaths?: Record<string, string>;
   /** Composable per-request header sources — see §16. Must be a stable reference; see the
    *  memoisation contract below. */
@@ -1580,6 +1609,9 @@ export class ApiError extends Error {
    *  path, so a caller debugging "the server sent something weird" doesn't have to reproduce
    *  the request to see what it actually was. */
   readonly body?: unknown;
+  /** The raw wire value of `error.code` when it fell outside the closed ApiErrorCode set —
+   *  `null` for every known code. Only apiErrorFromEnvelope ever sets this (see below). */
+  readonly unrecognizedCode: string | null;
 
   constructor(
     message: string,
@@ -1590,6 +1622,7 @@ export class ApiError extends Error {
       requestId?: string | null;
       retryAfter?: string | null;
       body?: unknown;
+      unrecognizedCode?: string | null;
     },
   );
 }
@@ -1600,14 +1633,19 @@ export class ApiError extends Error {
 export function isApiError(value: unknown): value is ApiError;
 
 /** Pure. Validates, does not assume: `data` must be an object with an `error` object whose
- *  `code` is one of the ten ApiErrorCode values, `message` is a string, `details` is an
- *  object, and `request_id` is a string or null. An unrecognised `code` FAILS the guard. */
+ *  `code` is a non-empty string, `message` is a string, `details` is an object, and
+ *  `request_id` is a string or null. Deliberately forward-compatible on `code` — a value
+ *  outside the ten-member ApiErrorCode union still passes, so a host on an older minor keeps
+ *  message/details/request_id when the backend emits a code this SDK doesn't know yet (see
+ *  the narrowing note below). */
 export function isApiErrorEnvelope(data: unknown): data is ApiErrorEnvelope;
 
 /** Pure. Never throws while constructing an error — a non-envelope `body` (HTML, empty,
- *  null, valid-JSON-non-envelope, an envelope with an unrecognised code) produces a
- *  well-formed ApiError with code "unknown_error" and `body` set to the raw input, rather
- *  than the parser itself failing on the failure path it exists to describe. */
+ *  null, valid-JSON-non-envelope) produces a well-formed ApiError with code "unknown_error"
+ *  and `body` set to the raw input. A well-shaped envelope with a `code` outside the ten is a
+ *  third case: `code` degrades to "error" (the documented catch-all) while `message`/
+ *  `details`/`request_id` are preserved exactly as a known code would be, and the raw value
+ *  survives on `unrecognizedCode`. */
 export function apiErrorFromEnvelope(input: {
   status: number;
   body: unknown;
@@ -1631,15 +1669,27 @@ All **Public.**
   data** (a status code, a parsed-or-unparsed body, header values the caller already read), never
   on a live request. A future session adding a `fetch` call to either function is the boundary
   violation §13 warns about, concretely.
-- **`isApiErrorEnvelope` validates, not assumes** — the literal requirement: `data` must be a
-  non-null object with an `error` property that is itself an object; `error.code` must be a
-  member of the **closed** ten-value set (not merely `typeof === "string"`); `error.message` must
-  be a string; `error.details` must be an object; `error.request_id` must be a string or `null`.
-  **An unrecognised `code` value fails the guard entirely**, rather than passing the envelope
-  through with a `code` outside `ApiErrorCode` — this is what keeps every downstream
-  `switch (error.code)` exhaustive and type-safe; a malformed or third-party body (a proxy
-  emitting its own `{"error": {"code": "gateway_timeout", ...}}` shape, say) must be rejected by
-  the guard, not silently accepted as a tenth-plus code.
+- **`isApiErrorEnvelope` validates shape, not the closed code set** — the literal requirement:
+  `data` must be a non-null object with an `error` property that is itself an object;
+  `error.code` must be a **non-empty string** (not necessarily a member of the ten-value
+  `ApiErrorCode` union); `error.message` must be a string; `error.details` must be an object;
+  `error.request_id` must be a string or `null`. **This is a deliberate change from an earlier
+  version, which rejected the whole envelope on an unrecognised `code`.** README documents that
+  a future minor version may carve a new, more specific code out of `"error"` (§1's four rules)
+  — a host on an older minor still needs to parse that response, and rejecting the envelope over
+  the one field it doesn't recognise yet threw away `message`/`details`/`request_id` too, not
+  just the code. A malformed or third-party body (a proxy emitting its own
+  `{"error": {"code": "gateway_timeout", ...}}` shape, say) is still rejected if `code` is
+  missing, non-string, or empty — this only widens what counts as a *recognised shape*, not what
+  counts as *no shape at all*.
+
+  **This is a narrow, deliberate unsoundness against the `data is ApiErrorEnvelope` return
+  type**: `error.code` is typed as the closed `ApiErrorCode` union, but a value outside that
+  union can genuinely reach here at runtime once this guard passes. It's safe in practice
+  because the one caller every host is expected to use, `apiErrorFromEnvelope` below, normalises
+  any such value to `"error"` before it can escape as a typed `ApiErrorCode` — so a
+  `switch (apiError.code)` downstream stays exhaustive. A caller invoking this guard directly and
+  trusting `envelope.error.code` as a union member without re-checking inherits this narrowing.
 - **`apiErrorFromEnvelope` never throws while constructing an error** — this is the single most
   important behaviour in this module, matching the framing of the backend's most important
   per-module test (§2.9's `file_url` seek-restore). A parser that can itself throw on the
@@ -1649,12 +1699,23 @@ All **Public.**
   cause instead. Header-derived values (`requestId`, `retryAfter`) are **read by the caller**
   (the host's concrete client, which has the live `Response`) and passed in — this function never
   touches `Response` itself, keeping it pure per the rule above.
+- **A well-shaped envelope with an unrecognised `code` is a third outcome, distinct from both
+  the success path and `"unknown_error"`.** `code` degrades to `"error"` — the same catch-all a
+  future specific code would have been carved out of — while `message`, `details`, and
+  `request_id` are preserved exactly as a known code would be; the raw wire value survives on
+  `ApiError.unrecognizedCode` (`null` for every known code), so a caller that cares can still
+  tell "a code we don't have a name for yet" apart from an ordinary `"error"` response, without
+  that distinction ever leaking into the `code` union itself. Falling through to
+  `"unknown_error"` — which loses `message`/`details`/`request_id` — is reserved for a body that
+  isn't the envelope shape at all.
 - **Mandated tests, the exact adversarial-input list, not a happy-path sample:** an HTML body (an
   nginx error page), an empty body, `null`, valid JSON that isn't an envelope shape at all, a
-  well-formed envelope with a `code` outside the ten (must fail `isApiErrorEnvelope` and fall
-  through to the `"unknown_error"` path), an envelope missing `details`, and a 204 (empty body,
-  success status — `apiErrorFromEnvelope` is never called on this path by a correctly-written
-  caller, but the function itself must not crash if it somehow is).
+  well-formed envelope with a `code` outside the ten (must pass `isApiErrorEnvelope` and degrade
+  to `"error"` with `unrecognizedCode` set and `message`/`details`/`request_id` intact — not fall
+  through to `"unknown_error"`), an envelope missing `details` (still correctly rejected — this
+  is a shape failure, not a code failure), and a 204 (empty body, success status —
+  `apiErrorFromEnvelope` is never called on this path by a correctly-written caller, but the
+  function itself must not crash if it somehow is).
 - **Follow-up flagged for the base-scaffold, not applied here (separate repo, outside this
   session's scope):** `../base-scaffold/frontend/lib/api-client.ts` currently parses the envelope
   inline (`isEnvelope`, lines 63-67) and declares its own `ApiError` (lines 29-54) rather than
@@ -1969,10 +2030,12 @@ even when this safeguard's warning goes unread.
 
 ```json
 {
-  "name": "appkit",
-  "version": "1.0.0",
+  "name": "@hjtdev/appkit",
+  "version": "1.0.1",
   "type": "module",
   "sideEffects": false,
+  "repository": { "type": "git", "url": "git+https://github.com/HjtDev/appkit.git", "directory": "frontend" },
+  "publishConfig": { "access": "public", "provenance": true },
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": { ".": { "types": "./dist/index.d.ts", "import": "./dist/index.js" } },
@@ -1989,16 +2052,28 @@ even when this safeguard's warning goes unread.
   },
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
+    "prepare": "tsc -p tsconfig.build.json",
     "test": "vitest",
     "lint": "eslint src"
   }
 }
 ```
 
+- **`name: "@hjtdev/appkit"`, not the bare `appkit`** — the unscoped name is an unrelated package
+  already registered on the public npm registry (v1.0.1 as of this writing too, coincidentally),
+  so a scoped name is not a style choice but the only name available. `publishConfig.access:
+  "public"` is required on every publish of a scoped package — npm otherwise defaults a scoped
+  package to a *private* (paid) publish and the release fails. `publishConfig.provenance: true`
+  attaches a build-provenance attestation when published from CI (`APP-DESIGN.md` §11.1's
+  OIDC-based publish job); it's a no-op, not an error, on a manual `npm publish` from a
+  workstation. `repository` is required for provenance to link back to this source.
+- **`prepare` builds `dist/` before `npm publish` packs it** — the same script a git-installed
+  copy would need to run for itself, kept here so `npm publish`'s local pack step and a
+  contributor's own local install never diverge in what gets shipped.
 - **`exports` map declares only `"."`** — same enforcement `APP-DESIGN.md` §12 already
   establishes for every app SDK, applied to appkit itself: a host importing
-  `appkit/dist/provider` and coupling to an internal path is a mistake Node's resolver refuses to
-  allow, not a convention a host has to remember to respect.
+  `@hjtdev/appkit/dist/provider` and coupling to an internal path is a mistake Node's resolver
+  refuses to allow, not a convention a host has to remember to respect.
 - **`sideEffects: false`** — every export here is a pure function, a class, or a component with
   no top-level side effect (the duplicate-copy safeguard in §21 runs inside a module-scope
   `if (process.env.NODE_ENV !== "production")` guard specifically so the module stays tree-shake
@@ -2017,19 +2092,20 @@ even when this safeguard's warning goes unread.
   one" — appkit holds itself to the same rule it documents for every app), MSW for the header-
   injection and envelope-parsing tests' HTTP-layer mocking, `@testing-library/react` for the
   hook/provider tests, TypeScript for the build.
-- **`appkit` is a `peerDependency` of every installed app's own SDK, never a regular
-  dependency — and the host installs `appkit` itself explicitly, once, per
-  `APP-DESIGN.md` §12 and `INTEGRATION-GUIDE.md` §2 step 3.** The failure this prevents, stated
-  concretely rather than left as "npm might duplicate it": npm cannot dedupe two different
-  `github:HjtDev/appkit#vX:frontend` specs pulled in transitively by two different installed
-  apps' own `peerDependencies` into a single copy the way it dedupes two identical registry
-  version ranges — two copies means two separate React module instances, which means two
-  separate React contexts, which means the host's one mounted `ApiClientProvider` and one
-  installed app's `useApiClient` call resolve against **different** context instances, and the
-  hook throws (§15) or — if the duplicate-copy safeguard's warning goes unheeded — silently
-  behaves as if no provider were mounted at all in that half of the tree. **Verification step for
-  a host, worth stating in the README directly:** `npm ls appkit` after installing every app
-  should show exactly one resolved copy, not two at different paths.
+- **`@hjtdev/appkit` is a `peerDependency` of every installed app's own SDK, never a regular
+  dependency — and the host installs `@hjtdev/appkit` itself explicitly, once, per
+  `APP-DESIGN.md` §12 and `INTEGRATION-GUIDE.md` §2 step 3.** On the registry, npm *does* dedupe
+  two compatible `peerDependency` ranges declared by two different installed apps into one
+  resolved copy — this is no longer working around an npm limitation (v1.0.0's `github:` install
+  had exactly that limitation, since npm cannot dedupe two separately-specified git refs the way
+  it dedupes two registry ranges; that defect is why this package is on the registry at all now).
+  The explicit host-level install is instead the ordinary peer-dependency convention: a
+  `peerDependency` documents "this SDK needs a copy of X in the tree" without npm auto-installing
+  one, so *something* still has to put that one copy there. **Verification step for a host,
+  worth stating in the README directly:** `npm ls @hjtdev/appkit` after installing every app
+  should show exactly one resolved copy, not two at different paths — still worth checking, since
+  a host that pins two incompatible major ranges across two apps' peer dependencies can still end
+  up with two copies even on the registry.
 - **Version agreement across `pyproject.toml`, `package.json`, and `CHANGELOG.md` under one tag**
   — `CLAUDE.md` rule 5, restated here because this is the file that would otherwise drift first.
 
@@ -2046,7 +2122,7 @@ and `INTEGRATION-GUIDE.md` §2 steps 3/11 verbatim once code exists.
 
 import { useState, useMemo } from "react";
 import { QueryClientProvider } from "@tanstack/react-query";
-import { ApiClientProvider, makeQueryClient } from "appkit";
+import { ApiClientProvider, makeQueryClient } from "@hjtdev/appkit";
 import { apiClient } from "@/lib/api-client";
 import { getAuthHeaders } from "@/lib/auth"; // host's own — appkit knows nothing about it
 
@@ -2082,7 +2158,7 @@ Two host-side consequences worth stating explicitly, since both change existing 
 (flagged for the user to apply, not applied here — separate repo):
 
 - **`frontend/lib/query-client.ts` becomes a thin re-export**: `export { makeQueryClient } from
-  "appkit";` — the scaffold's own factory (`query-client.ts:19-37`) and appkit's §20 are, by
+  "@hjtdev/appkit";` — the scaffold's own factory (`query-client.ts:19-37`) and appkit's §20 are, by
   design, the identical function; once appkit ships, the host should stop maintaining a second
   copy rather than keep both in sync by hand.
 - **`frontend/lib/api-client.ts` should construct its `ApiError` via appkit's `apiErrorFromEnvelope`

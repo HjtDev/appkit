@@ -157,6 +157,11 @@ REST_FRAMEWORK: dict[str, object] = {
         "rest_framework.authentication.BasicAuthentication",
     ],
     "DEFAULT_THROTTLE_CLASSES": ["rest_framework.throttling.ScopedRateThrottle"],
+    # Must agree with APPKIT["TRUSTED_PROXY_COUNT"] below (appkit.W006) — this playground sits
+    # behind nginx specifically to exercise a real proxy chain (see the module docstring), so
+    # leaving this unset would make ScopedRateThrottle's bucket key spoofable by exactly the
+    # kind of forged X-Forwarded-For hop client_ip() is tested against here.
+    "NUM_PROXIES": 1,
     "DEFAULT_THROTTLE_RATES": {
         # This playground's OWN throttle rate, registered per docs/APP-DESIGN.md §1.3's
         # namespacing convention (throttle_scope("demo", "list") -> "demo_list"). Not part of

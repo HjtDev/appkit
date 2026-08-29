@@ -34,7 +34,7 @@ Phase 0 writes it. This file is the fast reference.
 5. **Both halves release under one tag** — `pyproject.toml`, `package.json`, `CHANGELOG.md`
    agree; CI fails the build otherwise.
 6. **Namespace everything landing in a shared namespace** — cache keys, settings keys, `.env`
-   keys, throttle-scope helpers. `APP-DESIGN.md` §1.3.
+   keys, throttle-scope helpers. `APP-DESIGN.md` §1.2.
 
 ## Blast radius — read before touching a public signature
 

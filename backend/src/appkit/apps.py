@@ -30,3 +30,4 @@ class AppKitConfig(AppConfig):
         register(checks.check_unknown_settings_keys)
         register(checks.check_throttle_scopes)
         register(checks.check_logging_filter)
+        register(checks.check_num_proxies_throttle_agreement)

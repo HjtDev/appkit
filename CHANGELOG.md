@@ -4,6 +4,92 @@ All notable changes to appkit are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning is semantic across both
 halves under one tag (`CLAUDE.md`'s Semver triggers).
 
+## [1.0.1] — 2026-08-29
+
+Every defect below came from a real consumer — base-scaffold — actually installing v1.0.0.
+None of these are code-behavior regressions from that release; they're integration defects
+v1.0.0 shipped with, only surfaced once something outside this repo depended on it.
+
+**Why this is 1.0.1, not 2.0.0, despite the frontend package renaming and every import
+changing.** Renaming a published package and changing its import specifier ordinarily meets
+CLAUDE.md's own bar for a major bump. It ships as a patch here for one reason, stated openly
+rather than left for a reader to wonder about: v1.0.0's frontend half was **uninstallable by
+every command its own README documented** (below) — there is no working consumer whose imports
+this breaks, because no install of `"appkit"` from git ever actually resolved the tagged
+`frontend/` tree. base-scaffold had to vendor a tarball to proceed at all. A version bump exists
+to warn existing consumers about a change to something that worked; nothing that worked is
+changing here.
+
+### Added
+
+- **`appkit.W006`** (`check_num_proxies_throttle_agreement`) — warns when
+  `REST_FRAMEWORK["NUM_PROXIES"]` disagrees with `APPKIT["TRUSTED_PROXY_COUNT"]`, or is unset
+  while any `SimpleRateThrottle` subclass (`ScopedRateThrottle`, `AnonRateThrottle`,
+  `UserRateThrottle`, or a host's own) is configured, globally or on any view. DRF's
+  `SimpleRateThrottle.get_ident()` does its own `X-Forwarded-For` parsing that appkit cannot
+  inject `client_ip()`'s trusted-hop logic into — with `NUM_PROXIES` unset, `get_ident()` joins
+  the entire header into the throttle bucket key, making the throttle spoofable by a client that
+  prepends fake hops. See `README.md`'s System checks table and `docs/CONTRACT.md` §6.
+- **`ApiError.unrecognizedCode: string | null`** (frontend) — the raw wire value of `error.code`
+  when `apiErrorFromEnvelope` degraded it to `"error"` because it fell outside the ten-member
+  `ApiErrorCode` union; `null` for every known code. Purely additive — no existing field changed
+  shape.
+
+### Changed
+
+- **Frontend package published to the npm registry as `@hjtdev/appkit`.** The bare `appkit` name
+  is an unrelated, already-registered package. **Host action:** `npm uninstall appkit && npm
+  install @hjtdev/appkit@^1.0.1`, then change every `from "appkit"` import to
+  `from "@hjtdev/appkit"`, and the `peerDependencies`/`dependencies` key in any app SDK's own
+  `package.json` the same way. This is the fix for the BLOCKER below.
+- **`isApiErrorEnvelope` widened to accept any non-empty-string `code`, not only the ten known
+  values** — forward-compatible with a future minor version carving a new, specific code out of
+  `"error"` (README's own documented policy). Purely additive at the type level: the exported
+  `ApiErrorCode`/`ApiErrorEnvelope` types are unchanged, and `apiErrorFromEnvelope` normalises
+  any such value to `"error"` before it can reach a `switch (code)` anywhere, so nothing
+  downstream that compiled against 1.0.0's types stops compiling. See `docs/CONTRACT.md` §17.
+- README gained: `HttpClient`'s exact method signatures (previously only in `client.ts`'s own
+  source comments), `client_ip()`'s trusted-hop algorithm (previously only the outcome was
+  documented), and `appkit.testing`'s two deferred-import rationales (previously only in
+  `testing.py`'s own source comments). No behavior changed; these were read-the-source gaps
+  base-scaffold hit and reported.
+
+### Removed
+
+- **All private-repo authentication guidance** — SSH-agent instructions, `--mount=type=ssh`,
+  the `GH_TOKEN`/`insteadOf` token flow — from `README.md`, `INTEGRATION-GUIDE.md`,
+  `APP-DESIGN.md` (§1.2 deleted outright), and `BASE-DESIGN.md`'s example Dockerfiles. This
+  repo, and every package in this ecosystem, is public; installing either half has never
+  required a credential of any kind, and the docs no longer imply otherwise. **Host action:** if
+  a consuming project added an SSH-agent CI step, a `--ssh default` buildx flag, or a
+  `GH_TOKEN`/`insteadOf` git config specifically to install `appkit`, remove it — it was never
+  load-bearing for a public repo and is now dead weight.
+- Confirmed via `git log -p --all -- '*.env' '*.env.*' '*.pem' '*key*'` before writing any of the
+  above: nothing real was ever committed to this repo's history (an empty `.env.example`
+  placeholder and a system-check test fixture literally named for testing an unrecognised
+  *settings* key, not a secret). Going public required no history remediation.
+
+### BLOCKER fixed — the frontend half was uninstallable by every documented command
+
+Verified directly, against the real repo, on npm 11.16.0: `npm install
+"github:HjtDev/appkit#v1.0.0:frontend"` (README's own documented command) silently drops both
+the tag and the subdirectory — npm logs `ignoring unknown key "v1.0.0"` and installs the
+**default branch's entire repo root** instead. The `::path:frontend` form fares no better: it
+reads package metadata from `frontend/package.json` but still packs and installs the **whole
+repository**, `backend/` included, so `import "appkit"` fails with
+`ERR_PACKAGE_PATH_NOT_EXPORTED`. Committing `frontend/dist` does not fix `::path:` either —
+verified with a local git remote built specifically to test this — because `::path:` is
+metadata-only; npm packs the repo root regardless of what's committed where. There is no
+subdirectory-git-install form that works for this monorepo layout; a registry publish was the
+only fix available, which is why the frontend half now installs from `@hjtdev/appkit` (see
+"Changed" above) rather than a corrected git URL.
+
+**Host action, the load-bearing one:** replace any `npm install "github:HjtDev/appkit#..."` —
+in a `package.json`, a Dockerfile, a CI workflow — with `npm install @hjtdev/appkit`. The
+backend half is unaffected: `uv`/`pip` correctly implement Git's `#subdirectory=` fragment, so
+`git+https://github.com/HjtDev/appkit.git@v1.0.1#subdirectory=backend` continues to work exactly
+as before, no auth, no change.
+
 ## [1.0.0] — 2026-08-26
 
 Initial release. Nothing consumes appkit yet, so there is no prior version to diff against —

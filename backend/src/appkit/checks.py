@@ -3,7 +3,7 @@
 Present and safe: registered explicitly from ``ready()``, never picked up implicitly by Django's
 own auto-discovery (docs/CONTRACT.md §10's collision-audit table).
 
-Six functions, seven check IDs (docs/CONTRACT.md §6):
+Seven functions, eight check IDs (docs/CONTRACT.md §6):
 
     appkit.E001 (Error)   — RequestIDMiddleware absent from MIDDLEWARE
                              -> check_request_id_middleware
@@ -25,6 +25,10 @@ Six functions, seven check IDs (docs/CONTRACT.md §6):
     appkit.W005 (Warning) — LOGGING is configured but no handler references a
                              filter resolving to appkit.request_id.RequestIDFilter
                              -> check_logging_filter
+    appkit.W006 (Warning) — REST_FRAMEWORK["NUM_PROXIES"] disagrees with
+                             APPKIT["TRUSTED_PROXY_COUNT"], or is unset while a
+                             SimpleRateThrottle subclass is configured
+                             -> check_num_proxies_throttle_agreement
 
 Every function below is defensive by construction: a system check that raises breaks
 ``manage.py`` entirely, including the commands someone would use to fix the thing it's
@@ -202,7 +206,7 @@ def check_throttle_scopes(app_configs: Any, **kwargs: Any) -> list[CheckMessage]
     propagated.
     """
     try:
-        scopes = _collect_throttle_scopes()
+        scopes, _throttle_classes = _collect_throttle_info()
     except Exception:
         # Never let this check crash manage.py — see docstring. Logged, not silent: an
         # unwalkable URLconf is itself worth knowing about, just not at Error severity here.
@@ -235,19 +239,32 @@ def check_throttle_scopes(app_configs: Any, **kwargs: Any) -> list[CheckMessage]
     ]
 
 
-def _collect_throttle_scopes() -> set[str]:
-    """Walk ``ROOT_URLCONF`` and return every ``throttle_scope`` string found on a reachable
-    view. Returns an empty set (never raises) if ``ROOT_URLCONF`` is unset, unimportable, or
-    the walk otherwise fails — callers treat that identically to "no scopes found".
+def _collect_throttle_info() -> tuple[set[str], list[type]]:
+    """Walk ``ROOT_URLCONF`` once and return every ``throttle_scope`` string AND every
+    ``throttle_classes`` entry found on a reachable view.
+
+    Shared by ``appkit.W004`` (``check_throttle_scopes``) and ``appkit.W006``
+    (``check_num_proxies_throttle_agreement``) — one traversal of the URLconf serving both,
+    rather than each check walking it separately. A view's ``throttle_classes`` is read as a
+    resolved class list (DRF's ``APIView.throttle_classes`` is a class attribute, already
+    Python objects by the time a view module is imported — never dotted strings needing
+    ``import_string`` the way ``REST_FRAMEWORK["DEFAULT_THROTTLE_CLASSES"]`` does), which is
+    what lets this catch a view that sets ``throttle_classes`` itself with no global default
+    configured at all — ``appkit.W006``'s per-view coverage gap the class-attribute default
+    alone wouldn't close.
+
+    Returns ``(set(), [])`` — never raises — if ``ROOT_URLCONF`` is unset, unimportable, or the
+    walk otherwise fails; callers treat that identically to "nothing found".
     """
     from django.urls import URLResolver, get_resolver
 
     root_urlconf = getattr(settings, "ROOT_URLCONF", None)
     if not root_urlconf:
-        return set()
+        return set(), []
 
     resolver = get_resolver(root_urlconf)
     scopes: set[str] = set()
+    throttle_classes: list[type] = []
 
     def _walk(patterns: Any) -> None:
         for pattern in patterns:
@@ -258,12 +275,165 @@ def _collect_throttle_scopes() -> set[str]:
             if callback is None:
                 continue
             target = getattr(callback, "view_class", None) or getattr(callback, "cls", None)
-            scope = getattr(target, "throttle_scope", None) if target is not None else None
+            if target is None:
+                continue
+            scope = getattr(target, "throttle_scope", None)
             if isinstance(scope, str) and scope:
                 scopes.add(scope)
+            classes = getattr(target, "throttle_classes", None)
+            if classes:
+                throttle_classes.extend(cls for cls in classes if isinstance(cls, type))
 
     _walk(resolver.url_patterns)
-    return scopes
+    return scopes, throttle_classes
+
+
+def check_num_proxies_throttle_agreement(app_configs: Any, **kwargs: Any) -> list[CheckMessage]:
+    """appkit.W006 — two independent conditions about ``REST_FRAMEWORK["NUM_PROXIES"]``, both
+    warned about because DRF's ``SimpleRateThrottle.get_ident()`` does its own
+    ``X-Forwarded-For`` parsing that appkit has no way to inject
+    :func:`appkit.net.client_ip`'s trusted-hop logic into.
+
+    With ``NUM_PROXIES`` unset (DRF's own default, ``None``), ``get_ident()`` joins the
+    **entire** ``X-Forwarded-For`` header into one string and uses that as the throttle bucket
+    key — not the untrusted leftmost entry, not the trusted rightmost one, the whole chain. A
+    client prepending fake hops gets a fresh bucket key on every request, making the throttle a
+    no-op for exactly the client it exists to slow down.
+
+    Two conditions, both reported at this ID, with distinct messages because the fixes differ:
+
+    - **Unset** — ``NUM_PROXIES`` is ``None`` (whether omitted entirely or set to ``None``
+      explicitly — both behave identically in DRF) while any ``SimpleRateThrottle`` subclass is
+      configured, either globally via ``REST_FRAMEWORK["DEFAULT_THROTTLE_CLASSES"]`` or on any
+      view reachable via ``ROOT_URLCONF`` through its own ``throttle_classes``. Fix: set
+      ``NUM_PROXIES`` to the same value as ``APPKIT["TRUSTED_PROXY_COUNT"]``.
+    - **Disagreement** — ``NUM_PROXIES`` is set to a value that differs from
+      ``APPKIT["TRUSTED_PROXY_COUNT"]``. Fires regardless of which throttle classes are
+      configured: :func:`appkit.net.client_ip` and ``get_ident()`` would trust a different
+      number of proxy hops and disagree about who the client is, even though both are
+      individually "configured" rather than one being unset.
+
+    Detection is defensive throughout, matching every check in this module:
+
+    - A throttle class only counts if ``get_ident`` is the one it inherited from
+      ``BaseThrottle``/``SimpleRateThrottle`` — a subclass overriding ``get_ident()`` does its
+      own parsing, and warning about it would be a false positive this check cannot resolve
+      without re-implementing that subclass's own logic.
+    - Throttle classes are gathered two ways: the raw
+      ``REST_FRAMEWORK["DEFAULT_THROTTLE_CLASSES"]`` setting (dotted strings, resolved via
+      ``import_string``), and each view's own ``throttle_classes`` attribute, walked via
+      ``ROOT_URLCONF`` (:func:`_collect_throttle_info`, shared with ``appkit.W004``). A throttle
+      wired up some other way — ``get_throttles()`` overridden at runtime, a permission class
+      doing its own rate limiting — is invisible to this check; a clean run is not proof one
+      doesn't exist somewhere, the same limit ``appkit.W004`` already documents.
+    - ``rest_framework.throttling`` is imported **inside** this function, not at module scope:
+      ``SimpleRateThrottle`` reads ``api_settings.DEFAULT_THROTTLE_RATES`` at class-definition
+      time, which would raise if this module were ever imported before Django settings are
+      configured.
+    - Any unimportable class path, or a failed ``ROOT_URLCONF`` walk, contributes nothing from
+      that source rather than raising — never lets this check crash ``manage.py``, see the
+      module docstring.
+    """
+    drf_settings = getattr(settings, "REST_FRAMEWORK", None) or {}
+    num_proxies = drf_settings.get("NUM_PROXIES")
+    trusted_proxy_count = conf.get_setting("TRUSTED_PROXY_COUNT")
+
+    if num_proxies is not None and num_proxies != trusted_proxy_count:
+        return [
+            Warning(
+                f"REST_FRAMEWORK['NUM_PROXIES'] ({num_proxies!r}) disagrees with "
+                f"APPKIT['TRUSTED_PROXY_COUNT'] ({trusted_proxy_count!r}).",
+                hint=(
+                    "appkit.net.client_ip() and DRF's SimpleRateThrottle.get_ident() will "
+                    "trust a different number of X-Forwarded-For hops and disagree about who "
+                    "the client is. Set REST_FRAMEWORK['NUM_PROXIES'] to the same value as "
+                    "APPKIT['TRUSTED_PROXY_COUNT'] — docs/CONTRACT.md §6."
+                ),
+                id="appkit.W006",
+            )
+        ]
+
+    if num_proxies is None and _has_unguarded_simple_rate_throttle():
+        return [
+            Warning(
+                "REST_FRAMEWORK['NUM_PROXIES'] is unset while a rate-limiting throttle class "
+                "is configured.",
+                hint=(
+                    "With NUM_PROXIES unset, DRF's SimpleRateThrottle.get_ident() joins the "
+                    "entire X-Forwarded-For header into the throttle bucket key instead of "
+                    "just the trusted rightmost hop — a client prepending fake hops gets a "
+                    "fresh bucket on every request. Set REST_FRAMEWORK['NUM_PROXIES'] = "
+                    "APPKIT['TRUSTED_PROXY_COUNT'] — docs/CONTRACT.md §6."
+                ),
+                id="appkit.W006",
+            )
+        ]
+
+    return []
+
+
+def _has_unguarded_simple_rate_throttle() -> bool:
+    """True if any throttle class gathered by :func:`_configured_throttle_classes` is a
+    ``SimpleRateThrottle`` subclass that has **not** overridden ``get_ident`` — i.e. one that
+    would actually hit the ``NUM_PROXIES``-unset hazard ``appkit.W006`` warns about. Never
+    raises; see :func:`check_num_proxies_throttle_agreement`.
+    """
+    try:
+        from rest_framework.throttling import BaseThrottle, SimpleRateThrottle
+    except Exception:
+        # DRF itself unimportable is a much bigger problem than this check can meaningfully
+        # report — treat it as "nothing to warn about" rather than crash manage.py.
+        logger.debug(
+            "appkit.checks._has_unguarded_simple_rate_throttle: could not import DRF throttling",
+            exc_info=True,
+        )
+        return False
+
+    for cls in _configured_throttle_classes():
+        if not issubclass(cls, SimpleRateThrottle):
+            continue
+        if cls.get_ident is not BaseThrottle.get_ident:
+            # Overrides get_ident() itself — DRF's whole-header-join behaviour isn't in play.
+            continue
+        return True
+    return False
+
+
+def _configured_throttle_classes() -> set[type]:
+    """Every throttle class reachable two ways: ``REST_FRAMEWORK["DEFAULT_THROTTLE_CLASSES"]``
+    (dotted strings, resolved via ``import_string``) and each view's own ``throttle_classes``
+    attribute, walked via ``ROOT_URLCONF`` (:func:`_collect_throttle_info`, shared with
+    ``appkit.W004``). Never raises: an unimportable class path or a failed URLconf walk
+    contributes nothing from that source rather than propagating.
+    """
+    classes: set[type] = set()
+
+    drf_settings = getattr(settings, "REST_FRAMEWORK", None) or {}
+    for path in drf_settings.get("DEFAULT_THROTTLE_CLASSES") or []:
+        try:
+            resolved = import_string(path) if isinstance(path, str) else path
+        except Exception:
+            logger.debug(
+                "appkit.checks._configured_throttle_classes: could not import %r",
+                path,
+                exc_info=True,
+            )
+            continue
+        if isinstance(resolved, type):
+            classes.add(resolved)
+
+    try:
+        _scopes, view_throttle_classes = _collect_throttle_info()
+    except Exception:
+        # Never let this check crash manage.py — see module docstring.
+        logger.debug(
+            "appkit.checks._configured_throttle_classes: failed to walk ROOT_URLCONF",
+            exc_info=True,
+        )
+        view_throttle_classes = []
+    classes.update(view_throttle_classes)
+
+    return classes
 
 
 def check_logging_filter(app_configs: Any, **kwargs: Any) -> list[CheckMessage]:

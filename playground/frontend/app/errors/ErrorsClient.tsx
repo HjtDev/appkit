@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { useApiClient, isApiError, type ApiError } from "appkit";
+import { useApiClient, isApiError, type ApiError } from "@hjtdev/appkit";
 
 type Result = { label: string; ok: boolean; detail: string };
 

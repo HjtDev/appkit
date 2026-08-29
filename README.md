@@ -14,31 +14,28 @@ Full package contract: `docs/APP-DESIGN.md`. This README follows its §8 structu
 
 A host normally never runs this directly — every app package declares `"appkit>=1.0,<2.0"` in
 `[project.dependencies]`, and `uv` resolves appkit **transitively** the first time any app is
-installed (`INTEGRATION-GUIDE.md` §2 step 2). Because `appkit` isn't published to a package
-index, the host's own `pyproject.toml` has to say where it comes from — add this once, the
-first time any app is installed:
+installed (`INTEGRATION-GUIDE.md` §2 step 2). appkit's backend half is not published to a
+package index (only the frontend half is — see "Installation — frontend" below); the host's own
+`pyproject.toml` has to say where it comes from — add this once, the first time any app is
+installed:
 
 ```toml
 # host backend/pyproject.toml
 [tool.uv.sources]
-appkit = { git = "https://github.com/HjtDev/appkit.git", tag = "v1.0.0", subdirectory = "backend" }
+appkit = { git = "https://github.com/HjtDev/appkit.git", tag = "v1.0.1", subdirectory = "backend" }
 ```
 
 To install directly (e.g. this repo's own `playground/`, or a host without any apps yet):
 
 ```bash
-uv add "git+https://github.com/HjtDev/appkit.git@v1.0.0#subdirectory=backend"
+uv add "git+https://github.com/HjtDev/appkit.git@v1.0.1#subdirectory=backend"
 ```
 
-`HjtDev/appkit` is a **private** repo (`APP-DESIGN.md` §1.2) — authenticate with either an SSH
-agent (`git+ssh://git@github.com/HjtDev/appkit.git@v1.0.0#subdirectory=backend`) or a token via
-`git config --global url."https://x-access-token:${GH_TOKEN}@github.com/".insteadOf
-"https://github.com/"`. Never pass a token as a Docker `ARG`/`ENV` — it persists in image
-history.
+`HjtDev/appkit` is a **public** repo — no authentication needed for either half.
 
-`v1.0.0` is this package's first tagged release — the snippets above are accurate the moment
-that tag exists. Anything installed before then sits on a `0.x` version, which carries no
-stability guarantee (`CLAUDE.md`'s dependency-range rule).
+`v1.0.0` was this package's first tagged release; the snippets above track the current tag.
+Anything installed before `v1.0.0` existed sits on a `0.x` version, which carries no stability
+guarantee (`CLAUDE.md`'s dependency-range rule).
 
 ### Extras
 
@@ -60,17 +57,29 @@ frames deep — confirmed live against a real bare-install container (`playgroun
 
 ## Installation — frontend
 
-Unlike the backend half, the frontend half is installed **explicitly and once per host**, even
-though every SDK declares it as a `peerDependency` — npm can't dedupe two different
-`github:HjtDev/appkit#vX:frontend` specs into one copy, and two copies means two React
-contexts, so `useApiClient` would silently return `null` in half the tree
-(`INTEGRATION-GUIDE.md` §2 step 3):
+Unlike the backend half, the frontend half is published to the **public npm registry** as
+`@hjtdev/appkit` (not the bare `appkit` name — already taken by an unrelated package), and is
+installed **explicitly and once per host**, even though every SDK declares it as a
+`peerDependency` (`INTEGRATION-GUIDE.md` §2 step 3):
 
 ```bash
-npm install "github:HjtDev/appkit#v1.0.0:frontend"
+npm install @hjtdev/appkit
 ```
 
-Already installed at a version satisfying every app's peer range? Skip this step.
+Already installed at a version satisfying every app's peer range? Skip this step. After
+installing every app, `npm ls @hjtdev/appkit` should show exactly **one** resolved copy — two
+copies means two separate React module instances, and `useApiClient` would silently return
+`null` in half the tree.
+
+**Why the two halves install differently.** The backend half is a plain git dependency because
+`uv`/`pip` correctly implement Git's `#subdirectory=` fragment. npm has no working equivalent for
+a monorepo subdirectory: `github:HjtDev/appkit#vX:frontend` silently drops both the tag and the
+subdirectory (npm parses `:frontend` as junk and falls back to the default branch), and the
+documented-looking `::path:frontend` form only changes which `package.json` npm reads metadata
+from — it still packs and installs the **entire repository root**, `backend/` and all, so
+`import "..."` fails with `ERR_PACKAGE_PATH_NOT_EXPORTED`. Neither is a bug in this repo's
+layout; it's the ceiling of what npm's git installer supports. The registry install above has
+none of these problems, which is why it's the only supported way to install the frontend half.
 
 ## Compatibility
 
@@ -186,7 +195,7 @@ still passes `manage.py check` cleanly and gets broken behavior anyway:
 ## System checks
 
 Registered from `AppKitConfig.ready()` — the reason appkit needs a real `INSTALLED_APPS` entry,
-not just importability. Seven IDs, six functions, all reachable via `manage.py check`. This is
+not just importability. Eight IDs, seven functions, all reachable via `manage.py check`. This is
 appkit's substitute for the "signals emitted" section every other app package has: the contract
 about what appkit will tell a host, and how to diagnose a misconfiguration without reading
 appkit's source.
@@ -200,6 +209,7 @@ appkit's source.
 | `appkit.W003` | Warning | `APPKIT` dict has a key not in `appkit.conf.DEFAULTS` | Fix the typo — an unrecognised key is silently ignored, its value never read |
 | `appkit.W004` | Warning | A view reachable via `ROOT_URLCONF` declares a `throttle_scope` with no matching `DEFAULT_THROTTLE_RATES` entry | Add the rate, or fix the typo'd scope — DRF only raises for this at request time, per request, so it can otherwise ship silently |
 | `appkit.W005` | Warning | `LOGGING` is configured but no handler references a filter resolving to `RequestIDFilter` | Add `"request_id": {"()": "appkit.request_id.RequestIDFilter"}` to `LOGGING["filters"]`, and `"request_id"` to the relevant handler's `filters` list |
+| `appkit.W006` | Warning | `REST_FRAMEWORK["NUM_PROXIES"]` disagrees with `APPKIT["TRUSTED_PROXY_COUNT"]`, or is unset while a `SimpleRateThrottle` subclass (`ScopedRateThrottle`, `AnonRateThrottle`, `UserRateThrottle`, or a host's own) is configured, globally or on any view | Set `REST_FRAMEWORK["NUM_PROXIES"]` to the same value as `APPKIT["TRUSTED_PROXY_COUNT"]` — see "`client_ip()` — the trusted-hop algorithm" below; DRF's `get_ident()` does its own `X-Forwarded-For` parsing appkit cannot inject into, so the two settings drifting apart makes the throttle bucket spoofable even though `client_ip()` itself is correct |
 
 Every check is defensive by construction — a system check that raises breaks `manage.py`
 outright, including the very commands someone would use to fix what it's complaining about, so
@@ -247,7 +257,7 @@ appkit ships a pytest plugin, `appkit.testing`, providing `appkit_api_client`, `
 `appkit_clear_cache`, and the `appkit_assert_error_envelope(response, *, code, status)` helper
 (`docs/CONTRACT.md` §2.17).
 
-**Every name carries an `appkit_` prefix** — `APP-DESIGN.md` §1.3's namespacing rule applied to
+**Every name carries an `appkit_` prefix** — `APP-DESIGN.md` §1.2's namespacing rule applied to
 pytest's fixture registry, which is exactly the kind of shared, flat namespace that rule exists
 for. This isn't theoretical: pytest-django ships its own built-in fixtures literally named
 `admin_user` and `admin_client`, and (verified directly) pytest-django's versions win that name
@@ -269,6 +279,24 @@ addopts = "-p appkit.testing ..."
 
 An app package doing this gets `appkit_api_client`/`appkit_auth_client`/`appkit_user` for free
 instead of hand-rolling a slightly different version of each in its own `conftest.py`.
+
+**Why two of `appkit.testing`'s own imports are deferred into function bodies, not module
+scope** (previously only in the source comments of `backend/src/appkit/testing.py`):
+
+- `rest_framework.test.APIRequestFactory` reads DRF's `api_settings` at **class-definition**
+  time. A `-p` plugin named in `addopts` is imported during pytest's early
+  `consider_preparse` phase — ahead of pytest-django's own settings setup — so a module-scope
+  import here would raise `ImproperlyConfigured` the moment any consumer wires up
+  `-p appkit.testing`, before Django settings exist at all. Deferred into
+  `appkit_api_client()` instead.
+- A module-scope `appkit.request_id` import here lands **before** pytest-cov's tracer attaches
+  (for the same early-loading reason), and coverage.py then permanently reports every line that
+  module's import executes as "previously imported but not measured" — verified directly against
+  this exact codebase: `request_id.py`'s own measured coverage drops from 100% to 42% the moment
+  this import moves to module scope, in appkit's own suite, with no change in what actually ran.
+  This is why appkit's own `pyproject.toml` deliberately does **not** dogfood
+  `-p appkit.testing` in its own `addopts` — doing so would reproduce both drops in appkit's own
+  coverage numbers, not just a downstream consumer's.
 
 ### Two-leg strategy: gate run vs. bare-install check
 
@@ -344,10 +372,43 @@ lists what each provides rather than repeating them verbatim.
 | `appkit.text` | `truncate(value, length, *, suffix="…") -> str`, `to_english_digits(value) -> str`, `to_persian_digits(value) -> str` — codepoint-aware, matches the frontend half's `truncate` in *behaviour* exactly (the signature shape differs — TS has no keyword-only arguments; see "Frontend usage" below) |
 | `appkit.dates` | `to_jalali(value: date \| datetime) -> tuple[int, int, int]`, `from_jalali(year, month, day) -> date`, `format_jalali(value, fmt="%Y/%m/%d") -> str`, `parse_jalali(value, fmt="%Y/%m/%d") -> date` — Gregorian↔Jalali conversion; no third-party type in any signature |
 | `appkit.money` | `parse_amount(value: str \| int) -> int`, `format_amount(value: int, *, currency="") -> str` — fixed ASCII `,` grouping, never locale-dependent |
-| `appkit.throttling` | `throttle_scope(app_namespace, action) -> str` — a §1.3 scope-prefix-naming helper |
+| `appkit.throttling` | `throttle_scope(app_namespace, action) -> str` — a §1.2 scope-prefix-naming helper |
 | `appkit.conf` | `get_setting(key) -> Any`, `UNSET`, `DEFAULTS` (internal-but-stable, not re-exported from top-level `appkit`) |
 | `appkit.crypto` | `Cipher(key: str \| bytes)` — `.encrypt(value) -> str`, `.decrypt(token) -> str`; `generate_key() -> str`. Fernet encryption taking its key at construction. Requires the `crypto` extra; resolved in `docs/CONTRACT.md` §3: appkit reads no `.env`/settings key of its own, ever |
 | `appkit.testing` (pytest plugin, opt-in — see "Testing" above) | `appkit_api_client`, `appkit_user`, `appkit_admin_user`, `appkit_auth_client`, `appkit_admin_client`, `appkit_frozen_request_id`, `appkit_clear_cache`, `appkit_assert_error_envelope(response, *, code, status) -> None`. Every name is `appkit_`-prefixed on purpose — pytest-django ships its own built-in `admin_user`/`admin_client` fixtures, and (verified directly) pytest-django's win that exact name collision silently; the prefix is what keeps this plugin's fixtures from ever landing in that situation |
+
+### `client_ip()` — the trusted-hop algorithm
+
+The table above gives the outcome ("trusts only the proxy-appended entry, `TRUSTED_PROXY_COUNT`-th
+from the right"); this is the mechanism, since a host debugging a wrong client IP needs the
+algorithm, not just the promise.
+
+`X-Forwarded-For` is a comma-separated list a client can prepend arbitrary fake entries to —
+every entry left of what your own infrastructure appended is attacker-controlled. `client_ip()`
+never trusts the leftmost entry for exactly this reason. Instead:
+
+1. Split the header on `,`, trim whitespace from each part.
+2. Index **from the right**: `parts[-TRUSTED_PROXY_COUNT]` — the entry your own
+   `TRUSTED_PROXY_COUNT`-th proxy hop appended, never a client-suppliable position.
+3. Validate that entry as an IPv4/IPv6 address (stripping a `[bracket]:port` wrapper or a
+   trailing `:port` first) before returning it.
+
+Every one of these four situations falls back to the connection's own `REMOTE_ADDR`, with a
+logged warning, rather than raising or returning something wrong:
+
+- `X-Forwarded-For` is absent or empty — no proxy in front of this request at all.
+- The header has **fewer entries** than `TRUSTED_PROXY_COUNT` — a misconfigured proxy count, or a
+  request that skipped a hop somewhere.
+- `TRUSTED_PROXY_COUNT` is **not positive** — `parts[-0]` is `parts[0]`, the spoofable leftmost
+  entry, so a zero or negative count is treated as "nothing configured" rather than silently
+  handing an attacker-controlled value back as the trusted client IP.
+- The candidate at that position **isn't a valid IP address** once normalised — a malformed or
+  unexpected header shape.
+
+`appkit.W006` (see "System checks" above) exists because DRF's own `SimpleRateThrottle.get_ident()`
+does a **different**, simpler parse of the same header with no way for appkit to inject this
+algorithm into it — the two silently disagreeing about who the client is is exactly the failure
+that check catches.
 
 ## Exports (frontend)
 
@@ -362,7 +423,7 @@ Session 2). Nothing beyond this table is exported from `src/index.ts`.
 | `useApiClient(key, defaultBasePath)` | Called from each installed app's own `api/config.ts`, never directly by a host. **Returns `{ client: HttpClient; basePath: string }`** — this shape is a semver-major-bump trigger (`CLAUDE.md`). Both arguments required — a missing `basePaths` entry falls back to the app's own default, never to `""`/`/`; throws if called outside a mounted `ApiClientProvider` |
 | `HeaderSource` | `() => HeadersInit \| Promise<HeadersInit>` — see "Header injection" below |
 | `ApiError` / `isApiError` | Matches the backend envelope exactly — one definition instead of one per app. `isApiError` is a brand check, not `instanceof`, so it survives a duplicate-copy install |
-| `isApiErrorEnvelope` / `apiErrorFromEnvelope` | Pure envelope-parsing helpers — validate/construct from already-fetched data, never touch `fetch`/`Response` themselves |
+| `isApiErrorEnvelope` / `apiErrorFromEnvelope` | Pure envelope-parsing helpers — validate/construct from already-fetched data, never touch `fetch`/`Response` themselves. Forward-compatible on `code`: a code outside the ten-member union still validates as an envelope, and `apiErrorFromEnvelope` degrades it to `"error"` while preserving `message`/`details`/`request_id` and exposing the raw value on `ApiError.unrecognizedCode` (`null` for every known code) |
 | `ApiErrorCode` / `ClientErrorCode` / `ApiErrorEnvelope` | Types — the ten backend codes plus this client's own `"unknown_error"`, kept as a separate type so the ten-member union stays a true mirror |
 | `makeQueryClient()` | A factory (never a module-level singleton) — mirrors the scaffold's own `frontend/lib/query-client.ts` |
 | `truncate(value, length, suffix?)` / `toEnglishDigits(value)` / `toPersianDigits(value)` | Mirror the backend's `appkit.text` in *behaviour* — codepoint-aware, not UTF-16-unit-aware. `suffix` is a plain optional positional parameter here (TS has no keyword-only arguments; the backend's equivalent is keyword-only) |
@@ -374,6 +435,30 @@ Session 2). Nothing beyond this table is exported from `src/index.ts`.
 **Not exported, on purpose:** a concrete client/`apiClient` singleton, `getApiBaseUrl`, a
 `QueryClient` singleton, the `ApiClientContext` object itself, any manager or config-hook shape,
 any UI component, any storage helper. Reasoning for each: `docs/CONTRACT.md` §21.
+
+### `HttpClient`'s exact method signatures
+
+The interface, verbatim (`docs/CONTRACT.md` §14) — a host's concrete client satisfies this
+**structurally**, with no `implements` declaration and no import of this type required in the
+host's own client module, since TypeScript is structurally typed:
+
+```ts
+interface HttpClient {
+  get<T>(path: string, init?: RequestInit): Promise<T>;
+  post<T>(path: string, body?: unknown, init?: RequestInit): Promise<T>;
+  put<T>(path: string, body?: unknown, init?: RequestInit): Promise<T>;
+  patch<T>(path: string, body?: unknown, init?: RequestInit): Promise<T>;
+  delete<T>(path: string, init?: RequestInit): Promise<T>;
+}
+
+type HeaderSource = () => HeadersInit | Promise<HeadersInit>;
+```
+
+`put` is included alongside the more obvious `get`/`post`/`patch`/`delete` because an SDK
+wrapping a DRF `ViewSet`'s full-update action needs to express it — a deliberate deviation from
+an earlier draft that listed only four methods. There is no sixth `request()` method: that would
+leak a host implementation's own internal shape into this interface rather than describing
+behaviour, and appkit never implements `HttpClient` itself, only injects it.
 
 ## Header injection
 
@@ -404,7 +489,7 @@ adds a `basePaths` entry to this same provider, it never nests a second provider
 
 import { useState, useMemo } from "react";
 import { QueryClientProvider } from "@tanstack/react-query";
-import { ApiClientProvider, makeQueryClient } from "appkit";
+import { ApiClientProvider, makeQueryClient } from "@hjtdev/appkit";
 import { apiClient } from "@/lib/api-client";
 import { getAuthHeaders } from "@/lib/auth"; // host's own — appkit knows nothing about it
 
@@ -447,7 +532,7 @@ layers, in order:
    ```ts
    // api/config.ts — internal
    "use client";
-   import { useApiClient } from "appkit";
+   import { useApiClient } from "@hjtdev/appkit";
 
    export const useDemoConfig = () => useApiClient("demo", "/api/v1/demo");
    ```
@@ -457,7 +542,7 @@ layers, in order:
 
    ```ts
    // api/manager.ts — internal
-   import type { HttpClient } from "appkit";
+   import type { HttpClient } from "@hjtdev/appkit";
 
    export class DemoManager {
      constructor(

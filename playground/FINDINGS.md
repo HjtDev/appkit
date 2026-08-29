@@ -273,6 +273,16 @@ anything downstream could resolve `"appkit"` at all. Recommend a `prepare` scrip
 (`"prepare": "npm run build"`) so this becomes automatic on install, matching how most published
 npm packages handle this exact situation.
 
+**✅ Fixed in v1.0.0** (see the summary table's row 11): `frontend/package.json` gained a
+`prepare` script. **Superseded in v1.0.1**: this finding's own reproduction command
+(`github:HjtDev/appkit#v1.0.0:frontend`) turned out to never have installed the tagged
+`frontend/` tree at all — npm silently drops both the tag and the subdirectory from that spec
+and installs the default branch's repo root instead (a second, more fundamental defect than the
+missing `prepare` script this finding describes). appkit's frontend half is now published to the
+npm registry as `@hjtdev/appkit`; see the top-level `README.md`'s "Installation — frontend" for
+the corrected install command and the full explanation of why a registry publish, not a
+`prepare` script, was the real fix for the git-install path.
+
 ---
 
 ## 12. Two real, undocumented Next.js/Turbopack interactions
@@ -366,6 +376,40 @@ nothing about it needs to change.
 
 ---
 
+## 16. `appkit.W006` (v1.0.1) fired on this playground's own baseline settings
+
+**Fix belongs in: `playground`** (this repo's own demo config, not appkit). Rebuilding this
+playground against appkit v1.0.1 to verify the new `appkit.W006` check surfaced a real,
+pre-existing gap in `config/settings.py`: `REST_FRAMEWORK["DEFAULT_THROTTLE_CLASSES"]` has
+carried `ScopedRateThrottle` since Phase 6, and `APPKIT["TRUSTED_PROXY_COUNT"]` has been `1`
+since the same phase — but `REST_FRAMEWORK["NUM_PROXIES"]` was never set at all, in a project
+built specifically to exercise a real proxy chain through nginx. `manage.py check` reported:
+
+```
+?: (appkit.W006) REST_FRAMEWORK['NUM_PROXIES'] is unset while a rate-limiting throttle class is
+configured.
+```
+
+This is exactly the hazard the check exists to name: with `NUM_PROXIES` unset, DRF's
+`SimpleRateThrottle.get_ident()` joins the *entire* `X-Forwarded-For` header into the throttle
+bucket key rather than trusting only the rightmost, nginx-appended hop the way `client_ip()`
+does — a client prepending fake hops to the header this playground's own nginx forwards would
+have gotten a fresh throttle bucket on every request, silently defeating `demo_list`'s `5/min`
+rate limit. Nothing in this playground's own test suite (`tests/live/test_throttle.py`) happened
+to send a forged multi-hop header, so this shipped invisibly since Phase 6.
+
+**Fixed** by adding `"NUM_PROXIES": 1` next to `DEFAULT_THROTTLE_CLASSES` in
+`config/settings.py` (outside the "APPKIT WIRING" banner — `NUM_PROXIES` is DRF's own setting,
+not part of appkit's copy-pasted block). Verified both directions live against the rebuilt
+container: `manage.py check` reports no issues against the fixed settings, and two new
+`config/broken/` modules reproduce each of `appkit.W006`'s two conditions on demand —
+`num_proxies_unset.py` (deletes the key) and `num_proxies_disagrees.py` (sets it to `2`) — both
+confirmed to fire, following the same pattern as `no_throttle_rate.py` and the other six
+existing `broken/` modules (all seven re-verified still firing correctly, no regression from
+this change).
+
+---
+
 ## Summary — where every fix belongs
 
 | # | Finding | Fix belongs in | Status |
@@ -381,3 +425,4 @@ nothing about it needs to change.
 | 13 | Undeduped `@tanstack/react-query` copy without an npm workspace | `APP-DESIGN.md` (SDK-authoring guidance) | ✅ Fixed — extended the peer-dependency bullet |
 | 2–5, 8, 9, 14 | Everything else checked | **no issues found** | N/A |
 | 15 (Phase 7) | `config/settings.py`'s "APPKIT WIRING" banner cited stale line numbers and a pre-1.1-fix statement order after README's block became one contiguous fence | `playground` (this file) | ✅ Fixed — reordered to match README's fence exactly (`INSTALLED_APPS` first), citations now name the section instead of line numbers |
+| 16 (v1.0.1) | `NUM_PROXIES` never set alongside `DEFAULT_THROTTLE_CLASSES`/`TRUSTED_PROXY_COUNT` — spoofable throttle bucket, caught live by the new `appkit.W006` | `playground` (this file) | ✅ Fixed — `config/settings.py`; two new `config/broken/` modules cover both `appkit.W006` conditions |

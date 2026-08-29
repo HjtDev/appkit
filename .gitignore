@@ -14,8 +14,13 @@ dist/
 downloads/
 eggs/
 .eggs/
-lib/
-lib64/
+# lib/ and lib64/ deliberately REMOVED from this boilerplate: this repo's own Python venvs
+# nest everything under .venv/ (already ignored below), so a bare, unscoped `lib/` here served
+# no purpose except silently matching playground/frontend/lib/ — real, hand-written TypeScript
+# source (api-client.ts, query-client.ts, auth.ts) that had NEVER been committed to this repo
+# as a result, discovered only while verifying the v1.0.1 playground rebuild. Confirmed via
+# `find . -type d -name lib` that no other top-level lib/ or lib64/ directory exists anywhere
+# in this tree outside .venv.
 parts/
 sdist/
 var/

@@ -16,7 +16,7 @@ wheels = [
 
 [[package]]
 name = "appkit"
-version = "1.0.0"
+version = "1.0.1"
 source = { editable = "../../backend" }
 dependencies = [
     { name = "django" },
@@ -41,7 +41,7 @@ requires-dist = [
     { name = "djangorestframework", specifier = ">=3.15,<4.0" },
     { name = "jdatetime", specifier = ">=5,<7" },
     { name = "nh3", specifier = ">=0.2,<1.0" },
-    { name = "pillow", marker = "extra == 'images'", specifier = ">=10,<13" },
+    { name = "pillow", marker = "extra == 'images'", specifier = ">=11.3,<13" },
     { name = "puremagic", specifier = ">=2,<3" },
 ]
 provides-extras = ["crypto", "images"]
@@ -55,7 +55,7 @@ dev = [
     { name = "ruff", specifier = ">=0.12" },
 ]
 test = [
-    { name = "psycopg", extras = ["binary"], specifier = ">=3.2" },
+    { name = "psycopg", extras = ["binary"], specifier = ">=3.2.10" },
     { name = "pytest", specifier = ">=8.3" },
     { name = "pytest-cov", specifier = ">=6.0" },
     { name = "pytest-django", specifier = ">=4.9" },

@@ -22,8 +22,9 @@ block in the top-level `README.md` produces a working project when pasted litera
 ## Running it
 
 ```bash
-# One-time: appkit's own frontend dist/ is gitignored with no prepare/prepack script —
-# a real host consuming github:HjtDev/appkit#vX:frontend hits this too.
+# One-time: appkit's own frontend dist/ is gitignored. frontend/package.json's `prepare`
+# script builds it on `npm install`, but this dependency is path-linked (`file:../../frontend`),
+# so build it explicitly to avoid running against a stale dist/ from a previous checkout.
 cd frontend && npm run build && cd ../..
 
 cp playground/.env.example playground/.env

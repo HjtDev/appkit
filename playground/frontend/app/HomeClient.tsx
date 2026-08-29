@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useDemoItems, useCreateDemoItem, useInvalidateDemoCache } from "demo-sdk";
-import { isApiError } from "appkit";
+import { isApiError } from "@hjtdev/appkit";
 
 export default function HomeClient() {
   const items = useDemoItems();
