@@ -305,9 +305,10 @@ Create in frontend/:
   devDependency, a generate:types script, an exports map with just ".", files: ["dist"],
   version matching backend/pyproject.toml. If this repo IS appkit: `name` is the scoped
   `@hjtdev/appkit` (the registry publish target, docs/CONTRACT.md §22), plus `publishConfig:
-  { access: "public", provenance: true }`, a `repository` field, and a `prepare` script that
-  builds `dist/` — none of which apply to an ordinary app package, which installs by git tag,
-  not registry.
+  { access: "public" }` (NOT `provenance: true` here — that belongs on CI's own `npm publish
+  --provenance` flag only, or every manual/bootstrap publish hard-fails outside a CI OIDC
+  context), a `repository` field, and a `prepare` script that builds `dist/` — none of which
+  apply to an ordinary app package, which installs by git tag, not registry.
 - Run npm run generate:types (needs backend/schema.yml from Phase 4) to produce
   src/schema.d.ts. Never hand-edit this file — it's regenerated, not written.
 - tsconfig.json (strict), tsconfig.build.json, vitest.config.ts, eslint config
