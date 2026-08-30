@@ -102,5 +102,5 @@ def test_missing_crypto_extra_raises_actionable_import_error(
     runs in both legs.
     """
     monkeypatch.setitem(sys.modules, "cryptography.fernet", None)
-    with pytest.raises(ImportError, match=r"appkit\[crypto\]"):
+    with pytest.raises(ImportError, match=r"hjtdev-appkit\[crypto\]"):
         generate_key()

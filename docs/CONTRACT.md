@@ -322,8 +322,8 @@ class Cipher:
 def generate_key() -> str: ...
 ```
 
-**Public. Requires the `crypto` extra** (§8) — `pip install "appkit[crypto]"` /
-`uv add "appkit[crypto]"`.
+**Public. Requires the `crypto` extra** (§8) — `pip install "hjtdev-appkit[crypto]"` /
+`uv add "hjtdev-appkit[crypto]"`.
 
 - **Takes its key at construction time; never reads Django settings.** See §5 for the full
   reasoning — appkit ships the *mechanism*, never assumes a `FERNET_KEY`-shaped setting exists,
@@ -341,7 +341,7 @@ def generate_key() -> str: ...
   to `import cryptography` themselves just to provision a key.
 - **Missing-extra failure path, tested explicitly:** importing `appkit.crypto` without the
   `crypto` extra installed raises `ImportError` with a message naming the fix
-  (`Install with: uv add "appkit[crypto]"` / `pip install "appkit[crypto]"`), not a bare
+  (`Install with: uv add "hjtdev-appkit[crypto]"` / `pip install "hjtdev-appkit[crypto]"`), not a bare
   `ModuleNotFoundError: No module named 'cryptography'` three frames deep. The `import
   cryptography` happens lazily inside the module, wrapped in `try/except ImportError`, and
   re-raised with the actionable message — this path is unit-tested by simulating the import
@@ -874,7 +874,7 @@ def appkit_assert_error_envelope(response: Response, *, code: str, status: int) 
    applying `BASE-DESIGN.md` §3's own stated test — *does this depend on host configuration?* —
    a key-taking `Cipher` depends on **none**. `tools/crypto.py` keeps its `FERNET_KEY` exactly
    where it is and builds its own `Cipher(settings.FERNET_KEY)` from it; an app declaring
-   `appkit[crypto]` builds a `Cipher` from **its own** documented `.env` key. Only the primitive
+   `hjtdev-appkit[crypto]` builds a `Cipher` from **its own** documented `.env` key. Only the primitive
    itself — "wrap Fernet safely, with a clear error on a bad key" — is shared, which is the
    named alternative to four apps each hand-rolling that primitive independently
    (`APP-DESIGN.md` §4's "bundles its own equivalent").
@@ -882,9 +882,9 @@ def appkit_assert_error_envelope(response: Response, *, code: str, status: int) 
 **Combined with the extras decision (§9) into one rule, stated once here and cross-referenced
 from §7 and §9:**
 
-> `appkit.crypto` is an optional extra (`appkit[crypto]`) that takes its key at call time.
+> `appkit.crypto` is an optional extra (`hjtdev-appkit[crypto]`) that takes its key at call time.
 > appkit therefore requires **no `.env` key and no settings key** for encryption, under any
-> install combination. An app declaring `appkit[crypto]` is what makes *a* key necessary for
+> install combination. An app declaring `hjtdev-appkit[crypto]` is what makes *a* key necessary for
 > *that app* — and that key is the app's **own** documented `.env` key, never the host's
 > `FERNET_KEY` and never a key appkit itself names. The host scaffold's `FERNET_KEY` stays
 > exactly where `BASE-DESIGN.md` §3 already puts it: owned by `tools/crypto.py`, for
@@ -1085,7 +1085,7 @@ than two unrelated defaults that happen to look alike:
 
 **Zero `.env` keys — required or optional — under any installed extra.** This is a direct,
 deliberate consequence of §3's decision on `FERNET_KEY` and holds regardless of whether a host
-installs `appkit[crypto]`, `appkit[images]`, both, or neither: every credential/secret this
+installs `hjtdev-appkit[crypto]`, `hjtdev-appkit[images]`, both, or neither: every credential/secret this
 surface ever touches is an **app's** documented `.env` key, never appkit's own. Stated as the
 single most valuable property of this contract, since `APP-DESIGN.md` §8 makes every declared
 key something every host must go configure.
@@ -1213,18 +1213,18 @@ images = ["pillow>=10,<13"]
   `appkit.crypto` and the Pillow-dependent path of `appkit.files.validate_image` import their
   extra lazily, inside the function/module that needs it, wrapped in
   `try/except ImportError`, re-raised naming the exact fix
-  (`Install with: uv add "appkit[crypto]"` / `pip install "appkit[crypto]"`). **This error path
+  (`Install with: uv add "hjtdev-appkit[crypto]"` / `pip install "hjtdev-appkit[crypto]"`). **This error path
   itself is unit-tested** by simulating the missing import — a broken error message is otherwise
   only ever discovered by whoever actually hits it in production.
 - **The base-scaffold interaction is stated explicitly, so nobody assumes an isolation that
   doesn't exist:** `BASE-DESIGN.md` §4.2 already makes `cryptography` a **hard host**
   dependency, for `tools/crypto.py`'s own `FERNET_KEY`-backed cipher — meaning a standard
   scaffold-based host has `cryptography` installed regardless of whether any installed app ever
-  declares `appkit[crypto]`. The extra's real, narrower benefit: (a) an app that never encrypts
+  declares `hjtdev-appkit[crypto]`. The extra's real, narrower benefit: (a) an app that never encrypts
   anything doesn't itself declare the dependency, keeping its own footprint honest, and (b) a
   project that strips crypto out of the base scaffold entirely (a project with no field-level
   encryption need at all) can actually avoid pulling `cryptography` in through appkit.
-- **Extras compose:** `appkit[crypto,images]` is a valid, expected install for an app needing
+- **Extras compose:** `hjtdev-appkit[crypto,images]` is a valid, expected install for an app needing
   both. Each extra gets one line in `README.md`'s installation section naming what it enables
   and who needs it.
 - **CI gains a bare-install matrix leg** (extending `APP-DESIGN.md` §10.1's existing
@@ -1236,7 +1236,7 @@ images = ["pillow>=10,<13"]
   saying otherwise.
 
 **The two-leg test strategy is itself part of this contract, not an implementation detail —**
-stated here explicitly so an app consuming `appkit[crypto]`/`appkit[images]` understands that
+stated here explicitly so an app consuming `hjtdev-appkit[crypto]`/`hjtdev-appkit[images]` understands that
 appkit's own guarantees about those extras come from a *specifically configured* run, not from
 `uv run pytest` alone:
 
@@ -2064,6 +2064,11 @@ even when this safeguard's warning goes unread.
   so a scoped name is not a style choice but the only name available. `publishConfig.access:
   "public"` is required on every publish of a scoped package — npm otherwise defaults a scoped
   package to a *private* (paid) publish and the release fails.
+  The backend half hits the same collision on PyPI (a bare `appkit` there is `AppKit`, an
+  unrelated Webkit desktop framework) and takes the direct analogue of this fix:
+  `backend/pyproject.toml`'s `[project] name` is `"hjtdev-appkit"`, not `"appkit"` — a
+  distribution-name-only change, since PyPI has no scope mechanism. The importable module is
+  unaffected either way: `import appkit` everywhere, on both packages, always.
   **`provenance` is deliberately NOT in `publishConfig`.** It was there in an earlier draft, on
   the theory that it would be a harmless no-op outside CI — verified wrong the hard way, while
   bootstrapping the very first publish of this package: `publishConfig.provenance: true` makes

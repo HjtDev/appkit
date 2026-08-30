@@ -7,12 +7,21 @@ requires = ["setuptools>=77"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "appkit"
+# "hjtdev-appkit", not the bare "appkit" — the unscoped name is an unrelated, already-registered
+# PyPI package (AppKit, a Webkit desktop app framework), so a prefixed name is not a style choice
+# but the only one available. Same situation, same fix, as frontend/package.json's
+# "@hjtdev/appkit" (docs/CONTRACT.md §22). This is the DISTRIBUTION name only — the importable
+# module stays `appkit` everywhere (`import appkit`, `INSTALLED_APPS`, `AppConfig.name`, the
+# appkit.E001-W006 check IDs) exactly like `python-dateutil` ships `import dateutil`.
+name = "hjtdev-appkit"
 # 0.x = no stability guarantee while the public surface (docs/CONTRACT.md) is still being
 # written into code. Bumped to 1.0.0 here, deliberately, at Phase 8 — not incrementally per
-# phase, since nothing consumed the intermediate numbers. Must match frontend/package.json and
-# CHANGELOG.md; CI's version-lockstep job enforces it from here on.
-version = "1.0.1"
+# phase, since nothing consumed the intermediate numbers. Bumped to 2.0.0 for the PyPI
+# publication/rename above: unlike the frontend's 1.0.1 rename, the backend's prior install
+# command (`uv add "git+...#subdirectory=backend"`) actually worked, so changing the
+# requirement string is a real break for an existing consumer, not a fix to something broken.
+# Must match frontend/package.json and CHANGELOG.md; CI's version-lockstep job enforces it.
+version = "2.0.0"
 description = "Shared Django + DRF foundation every app package and host in this ecosystem depends on — cache, mixins, error envelope, request-ID plumbing, and the HttpClient/provider contract. Not an installable feature; the thing every other app is built on."
 requires-python = ">=3.13"
 license = "MIT"
@@ -36,12 +45,12 @@ dependencies = [
     "jdatetime>=5,<7",
 ]
 
-# Extras = features a CONSUMER opts into, installed with appkit[crypto] / appkit[images].
-# cryptography (42 lifetime OSV advisories) and pillow (153) are kept optional specifically
-# because of that advisory count — every hard dependency above has zero. A missing extra must
-# fail with an actionable "install with appkit[crypto]" message, never a bare ImportError
-# (docs/CONTRACT.md §9) — enforced by importing them lazily inside appkit.crypto /
-# appkit.files, never at module top level.
+# Extras = features a CONSUMER opts into, installed with hjtdev-appkit[crypto] /
+# hjtdev-appkit[images]. cryptography (42 lifetime OSV advisories) and pillow (153) are kept
+# optional specifically because of that advisory count — every hard dependency above has zero. A
+# missing extra must fail with an actionable "install with hjtdev-appkit[crypto]" message, never
+# a bare ImportError (docs/CONTRACT.md §9) — enforced by importing them lazily inside
+# appkit.crypto / appkit.files, never at module top level.
 [project.optional-dependencies]
 crypto = ["cryptography>=42,<51"]
 # >=11.3, not just >=10: pillow only started shipping cp314 wheels at 11.3.0, and its sdist

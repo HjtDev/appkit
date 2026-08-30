@@ -4,6 +4,48 @@ All notable changes to appkit are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning is semantic across both
 halves under one tag (`CLAUDE.md`'s Semver triggers).
 
+## [2.0.0] — 2026-08-30
+
+### Changed
+
+- **Backend package published to the PyPI registry as `hjtdev-appkit`.** The bare `appkit` name
+  is an unrelated, already-registered package (`AppKit`, a Webkit desktop app framework) — same
+  situation, same fix, as `@hjtdev/appkit` on npm (v1.0.1, below). The *import* name is
+  unaffected: `import appkit` still works exactly as before; only the installable/requirement
+  name changed, the same way `python-dateutil` ships `import dateutil`.
+
+  **Why this is 2.0.0, not a patch, unlike the frontend rename above.** v1.0.1's frontend rename
+  shipped as a patch because nothing that worked was changing — no install command in that
+  README ever actually resolved. This is the opposite case: `uv add
+  "git+https://github.com/HjtDev/appkit.git@v1.0.1#subdirectory=backend"` has always worked, and
+  any host that wrote the `[tool.uv.sources]` block this README documented has a real,
+  functioning pin on the name `appkit`. Changing the requirement string breaks that pin. A
+  version bump exists to warn a consumer about exactly this kind of change, so it gets one.
+
+  **Host action:** replace any dependency on `appkit` with `hjtdev-appkit>=2.0,<3.0` —
+  `uv remove appkit && uv add "hjtdev-appkit>=2.0,<3.0"` (or the `pip`/`requirements.txt`
+  equivalent) — and delete the `[tool.uv.sources]` entry pointing at the git URL, if one was
+  added per the old README. No import changes anywhere: `import appkit`,
+  `INSTALLED_APPS += ["appkit"]`, `-p appkit.testing`, and every `appkit.*` module path are
+  unchanged. See `README.md`'s "Installation — backend" section for the new install commands.
+
+- **`npm publish` in the reusable CI's `publish-npm` job now bumps npm to latest before
+  publishing.** Node 22 (this ecosystem's pinned `node-version`) bundles npm 10.9.x; npm trusted
+  publishing (OIDC) requires npm ≥ 11.5.1. Every prior tag's `publish-npm` run hit its
+  "already published — skipping" branch (the actual publish had been done by hand each time), so
+  this floor was never exercised until this release's tag — the first one where `publish-npm`
+  and the new `publish-pypi` job (below) both do real, first-time work. Fixed in the org-level
+  `HjtDev/.github` repo, not here — no host action.
+
+- **Added `publish-pypi` to `.github/workflows/ci.yml` itself**, not to the shared
+  `app-package-ci.yml` — the one sanctioned exception to "all real logic lives in the reusable
+  workflow" (`CLAUDE.md`, `APP-DESIGN.md` §10.1). PyPI's trusted-publisher model cannot validate
+  a `workflow_call` job's *callee* — only GitHub Actions' own OIDC claim for the workflow file
+  that is registered as the trusted publisher, which for this project is `ci.yml`. npm's
+  trusted-publisher model has the opposite rule (it validates the *caller's* workflow name for
+  `workflow_call`), which is why `publish-npm` correctly stays where it always was. No host
+  action — this only affects this repo's own release automation.
+
 ## [1.0.1] — 2026-08-29
 
 Every defect below came from a real consumer — base-scaffold — actually installing v1.0.0.

@@ -52,7 +52,7 @@ Therefore:
 - **App-private dependencies can be tighter**, but still prefer a range. A niche library only this app uses (`stripe`, `twilio`, `qrcode`) is less likely to collide, so `"stripe>=11,<13"` is fine — but `==` is still discouraged, because the moment a second app also needs `stripe`, an exact pin on both sides is a coin flip.
 - **The host pins the exact versions everyone runs against.** The host's `pyproject.toml` + `uv.lock` is where `django==6.0.4` actually gets decided. Apps declare what they *tolerate*; the host decides what *runs*.
 - **Never declare a dependency on another app package.** Not even a loose range. See §6 — with one named exception:
-  - **`appkit` is the exception.** Every app declares `"appkit>=1.0,<2.0"` in `[project.dependencies]` and imports the shared helpers it bundles from it (§4, §12) rather than reimplementing them. The range rule above applies with full force here — `appkit` is the most widely shared dependency in the entire ecosystem, so an exact pin on it is the worst possible place for one: two apps pinning different exact versions of `appkit` is unresolvable in any host that installs both.
+  - **`appkit` is the exception.** Every app declares `"hjtdev-appkit>=2.0,<3.0"` in `[project.dependencies]` and imports the shared helpers it bundles from it (§4, §12) rather than reimplementing them. (The distribution is `hjtdev-appkit` — the bare `appkit` name is an unrelated package already on PyPI — but the *importable* module stays `appkit` everywhere: `import appkit`, `appkit.mixins`, `appkit.exceptions`, and so on.) The range rule above applies with full force here — `appkit` is the most widely shared dependency in the entire ecosystem, so an exact pin on it is the worst possible place for one: two apps pinning different exact versions of `appkit` is unresolvable in any host that installs both.
 
     Make the distinction crisp, because this is the rule most likely to be misapplied later: §6 bans an app **reaching sideways into another app's models and services** — an ambient assumption that some other app just happens to be installed in the same host. A declared shared dependency is a different category entirely: it's explicit, versioned, resolved by `uv`, and sitting right there in `pyproject.toml` for anyone to see — the same category as the `jwt-core` dependency an OTP app would declare, not the category §6 exists to prevent. The test is mechanical: *is it in `[project.dependencies]`?* If yes, it's a declared dependency. If no, and you're importing it anyway, that's the §6 violation.
 - **Test/lint tooling never appears in `dependencies`.** It goes in `[dependency-groups]`, which is never installed by a consumer — see §3.
@@ -429,7 +429,7 @@ The `cd` in each entry is load-bearing. `uv run --project backend mypy` sets env
 
 ## 4. Views, Rate Limiting & API Documentation Standards
 
-- **Caching & error handling.** Every GET/list/retrieve view uses a caching mixin, and every view uses consistent error-handling/response conventions. Because this package must work standalone in *any* host project, it cannot import a host's `backend/tools/` — that folder is project-owned and isn't guaranteed to exist, or to exist at a stable import path, in every host. Instead, every app declares `appkit>=1.0,<2.0` (§1.1) and imports `CachedListMixin` from `appkit.mixins` and `standard_exception_handler` from `appkit.exceptions` — see `BASE-DESIGN.md` §3 for the exact envelope (`{"error": {"code", "message", "details", "request_id"}}` and the fixed `code` list) those helpers produce. This is a declared, versioned dependency, not an assumption about the host's internals — see §1.1 for why `appkit` is the one named exception to "never depend on another app package."
+- **Caching & error handling.** Every GET/list/retrieve view uses a caching mixin, and every view uses consistent error-handling/response conventions. Because this package must work standalone in *any* host project, it cannot import a host's `backend/tools/` — that folder is project-owned and isn't guaranteed to exist, or to exist at a stable import path, in every host. Instead, every app declares `hjtdev-appkit>=2.0,<3.0` (§1.1) and imports `CachedListMixin` from `appkit.mixins` and `standard_exception_handler` from `appkit.exceptions` — see `BASE-DESIGN.md` §3 for the exact envelope (`{"error": {"code", "message", "details", "request_id"}}` and the fixed `code` list) those helpers produce. This is a declared, versioned dependency, not an assumption about the host's internals — see §1.1 for why `appkit` is the one named exception to "never depend on another app package."
 - **Rate limiting.** Every view declares a `throttle_scope`, prefixed per §1.2, and every scope is listed in the app's `README.md` (§8) so a host knows what to add to `REST_FRAMEWORK['DEFAULT_THROTTLE_RATES']`. No view ships without one.
 - **API documentation.** Every view/viewset carries a complete `drf-spectacular` `@extend_schema` (or `extend_schema_view`) — summary, description, request/response serializers, and `tags=["notifications"]` for public views or `tags=["notifications-admin"]` for admin-dashboard views, so Swagger stays grouped per app and per surface.
 - **Pagination.** List views that can return unbounded data set an explicit `pagination_class` rather than relying on the host's `DEFAULT_PAGINATION_CLASS`, which the app can't know. The page-size default is documented in the README block.
@@ -1340,6 +1340,26 @@ permissions:
 at the top level of `ci.yml`, alongside `on:`/`jobs:` — a package that never sets
 `publish-npm: true` doesn't need this.
 
+**Publishing the backend half to PyPI cannot use `publish-npm`'s pattern — the job has to live in
+the CALLER's `ci.yml`, not in `app-package-ci.yml`.** This is not a style choice; it's forced by
+how each registry's trusted publisher validates a `workflow_call` job:
+
+- **npm** validates the *calling* workflow's filename — so `publish-npm` living inside
+  `app-package-ci.yml` is exactly right; every app registers `ci.yml` as its trusted publisher
+  and it works no matter which app's `ci.yml` triggered the run.
+- **PyPI** validates the *callee's* `job_workflow_ref` OIDC claim — for a `workflow_call` job that
+  resolves to `app-package-ci.yml` itself, never the caller. A `publish-pypi` job placed in the
+  shared workflow would make every app package share one PyPI trusted-publisher identity, which
+  isn't how PyPI's model works at all (a trusted publisher is registered per PyPI *project*,
+  naming one specific repo + workflow file). PyPI's own docs state the limitation outright:
+  reusable workflows cannot be the workflow named in a Trusted Publisher.
+
+So a `publish-pypi` job is a per-repo addition to `ci.yml` itself — see appkit's own
+`.github/workflows/ci.yml` for the concrete job (`environment: publish-pypi`,
+`pypa/gh-action-pypi-publish@release/v1`, gated on `needs: [ci]` so it only runs after the shared
+workflow is green). Register the trusted publisher on pypi.org against that exact repo + workflow
+filename + environment before the first tag that should publish.
+
 ### 10.3 Branch protection & automation
 
 - Require `backend-quality`, `backend-tests`, `frontend`, `version-lockstep`, and `no-inter-app-imports` to pass before merge to `main`. The rest (`resolution-matrix`, `security-audit`) can be advisory at first and promoted once they're stable. The two generated-types diff checks (§12) are steps inside `backend-tests` and `frontend` respectively, not separate jobs — requiring those two jobs already requires them.
@@ -1355,7 +1375,7 @@ at the top level of `ci.yml`, alongside `on:`/`jobs:` — a package that never s
 3. **Decide the bump** from the Conventional Commit history: any `!`/`BREAKING CHANGE` → major; any `feat:` → minor; otherwise patch. Remember from §6 that a changed signal payload, a changed `services.py` signature, or a renamed factory is a **major**, even if the diff looks tiny.
 4. **Bump the version in three places together:** `backend/pyproject.toml`, `frontend/package.json`, and a new `CHANGELOG.md` section. CI's `version-lockstep` job fails the build if they disagree, so this cannot be forgotten silently. Generated types (§12) make this rule enforceable rather than aspirational: a serializer change now mechanically produces a `schema.yml` diff and, from that, a `schema.d.ts` diff — and `backend-tests`/`frontend` (§10.1) refuse to pass until both are committed. There is no longer a way to ship a backend shape change in a commit whose frontend types weren't regenerated alongside it, which is exactly the class of "tiny diff, actually a major" mistake step 3 above warns about.
 5. **Update `README.md`'s config block** (§8) if settings, `.env` keys, throttle scopes, URLs, signal payloads, service signatures, factories, or exported hooks changed.
-6. **Commit, tag `vX.Y.Z`** (one tag covers both halves), push the tag. The tag push re-runs CI with the tag-match assertion active — and, for an app publishing its frontend half to npm (`publish-npm: true`, §10.1), publishes `frontend/` automatically via the `publish-npm` job's OIDC trusted-publish step. Nothing to run by hand once bootstrapped.
+6. **Commit, tag `vX.Y.Z`** (one tag covers both halves), push the tag. The tag push re-runs CI with the tag-match assertion active — and, for an app publishing its frontend half to npm (`publish-npm: true`, §10.1) and/or its backend half to PyPI (a `publish-pypi` job in `ci.yml`, §10.2), publishes both automatically via their respective OIDC trusted-publish steps. Nothing to run by hand once bootstrapped.
 7. **In a consuming project**, follow `INTEGRATION-GUIDE.md` §2's upgrade path.
 
 **One-time bootstrap, before the first tag that should publish to npm:** trusted publishing can
@@ -1364,6 +1384,15 @@ hand: `cd frontend && npm run build && npm publish --access public`. Then, on np
 the package's Settings → Trusted Publisher and link this repo and the workflow filename that
 calls `app-package-ci.yml` with `publish-npm: true`. Every tag pushed after that publishes from
 CI with no stored credential at all.
+
+**PyPI needs no equivalent bootstrap.** A PyPI *pending* trusted publisher can be registered
+against a project name that doesn't exist yet — the first tag whose `publish-pypi` job succeeds
+creates the project directly from CI, no manual `twine upload`/`uv publish` first. Only the
+GitHub environment the job declares (e.g. `publish-pypi`) has to exist ahead of time
+(`gh api repos/OWNER/REPO/environments -X PUT` or the repo's Settings → Environments UI, no
+protection rules required) — PyPI rejects the OIDC token with `invalid-pending-publisher` if the
+environment name in the pending publisher's config doesn't match one that actually exists on the
+repo.
 
 ### 11.2 The `playground/`
 

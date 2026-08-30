@@ -28,7 +28,7 @@ ENV UV_PROJECT_ENVIRONMENT=/opt/venv
 WORKDIR /app/playground/backend
 
 RUN if [ "$PLAYGROUND_EXTRAS" = "bare" ]; then \
-        sed -i 's/appkit\[crypto,images\]/appkit/' pyproject.toml; \
+        sed -i 's/hjtdev-appkit\[crypto,images\]/hjtdev-appkit/' pyproject.toml; \
     fi && \
     uv sync --no-dev
 

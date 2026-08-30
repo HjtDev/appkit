@@ -121,6 +121,9 @@ recreate it locally.
   (`docs/CONTRACT.md` §1 — `"error"` is a documented member, not an omission).
 - Changing the `HttpClient` interface, or `useApiClient`'s return shape.
 - Renaming a settings key or `.env` key.
+- Renaming the published distribution name (`hjtdev-appkit` on PyPI, `@hjtdev/appkit` on npm) —
+  the requirement string every consumer's `pyproject.toml`/`package.json` pins, distinct from the
+  importable module name (`appkit`), which almost never needs to move in lockstep with it.
 
 Every one needs a **Host action:** line in `CHANGELOG.md` — every host is affected, not apps.
 

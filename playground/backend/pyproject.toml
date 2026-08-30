@@ -3,7 +3,7 @@ name = "playground"
 version = "0.1.0"
 requires-python = ">=3.13"
 dependencies = [
-    "appkit[crypto,images]",
+    "hjtdev-appkit[crypto,images]",
     "django>=5.2,<7.0",
     "djangorestframework>=3.15,<4.0",
     "uvicorn>=0.34",
@@ -24,7 +24,7 @@ default-groups = ["test"]
 # changing the dependency declaration, so the same pyproject.toml line works for both dev and
 # release."
 [tool.uv.sources]
-appkit = { path = "../../backend", editable = true }
+hjtdev-appkit = { path = "../../backend", editable = true }
 
 [tool.pytest.ini_options]
 DJANGO_SETTINGS_MODULE = "config.settings"

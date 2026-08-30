@@ -12,35 +12,42 @@ Full package contract: `docs/APP-DESIGN.md`. This README follows its §8 structu
 
 ## Installation — backend
 
-A host normally never runs this directly — every app package declares `"appkit>=1.0,<2.0"` in
-`[project.dependencies]`, and `uv` resolves appkit **transitively** the first time any app is
-installed (`INTEGRATION-GUIDE.md` §2 step 2). appkit's backend half is not published to a
-package index (only the frontend half is — see "Installation — frontend" below); the host's own
-`pyproject.toml` has to say where it comes from — add this once, the first time any app is
-installed:
+Published to the **public PyPI registry** as **`hjtdev-appkit`** (not the bare `appkit` name —
+already taken by an unrelated package, same situation as `@hjtdev/appkit` on npm below). The
+*import* name is unaffected — `import appkit` — only the installable/requirement name is
+prefixed, exactly like `python-dateutil` ships `import dateutil`.
+
+A host normally never runs this directly — every app package declares
+`"hjtdev-appkit>=2.0,<3.0"` in `[project.dependencies]`, and `uv`/`pip` resolve it **transitively**
+the first time any app is installed (`INTEGRATION-GUIDE.md` §2 step 2). To install directly (e.g.
+this repo's own `playground/`, or a host without any apps yet):
+
+```bash
+uv add "hjtdev-appkit>=2.0,<3.0"
+# or: pip install "hjtdev-appkit>=2.0,<3.0"
+```
+
+**Pinning an unreleased commit instead of a tagged version** (rare — normal installs use the line
+above) still works via the git+subdirectory form, since `uv`/`pip` correctly implement Git's
+`#subdirectory=` fragment:
 
 ```toml
 # host backend/pyproject.toml
 [tool.uv.sources]
-appkit = { git = "https://github.com/HjtDev/appkit.git", tag = "v1.0.1", subdirectory = "backend" }
-```
-
-To install directly (e.g. this repo's own `playground/`, or a host without any apps yet):
-
-```bash
-uv add "git+https://github.com/HjtDev/appkit.git@v1.0.1#subdirectory=backend"
+hjtdev-appkit = { git = "https://github.com/HjtDev/appkit.git", tag = "v2.0.0", subdirectory = "backend" }
 ```
 
 `HjtDev/appkit` is a **public** repo — no authentication needed for either half.
 
-`v1.0.0` was this package's first tagged release; the snippets above track the current tag.
-Anything installed before `v1.0.0` existed sits on a `0.x` version, which carries no stability
-guarantee (`CLAUDE.md`'s dependency-range rule).
+**Host action if upgrading from `<2.0`:** the requirement name changed from `appkit` to
+`hjtdev-appkit` (see `CHANGELOG.md`'s `[2.0.0]` entry) — `uv remove appkit && uv add
+"hjtdev-appkit>=2.0,<3.0"`, and drop any `[tool.uv.sources]` entry for the old git install if one
+was added. No import changes anywhere.
 
 ### Extras
 
-Two optional dependency groups, installed with `appkit[extra]`. Omitted entirely, appkit's own
-hard dependencies (`django`, `djangorestframework`, `nh3`, `puremagic`, `jdatetime` — see
+Two optional dependency groups, installed with `hjtdev-appkit[extra]`. Omitted entirely, appkit's
+own hard dependencies (`django`, `djangorestframework`, `nh3`, `puremagic`, `jdatetime` — see
 "Compatibility" below) already cover the whole non-extra surface:
 
 - **`crypto`** — pulls in `cryptography`, enabling `appkit.crypto.Cipher`/`generate_key`. Needed
@@ -48,12 +55,12 @@ hard dependencies (`django`, `djangorestframework`, `nh3`, `puremagic`, `jdateti
   §3, and "Required `.env` keys" below).
 - **`images`** — pulls in `Pillow`, enabling `appkit.files.validate_image`'s raster-format
   dimension checks. Needed only by an app that accepts image uploads.
-- Compose both as `appkit[crypto,images]` when an app needs both.
+- Compose both as `hjtdev-appkit[crypto,images]` when an app needs both.
 
 Calling the corresponding function with the extra not installed raises `ImportError` with an
-actionable message (`Install with: uv add "appkit[crypto]"`) rather than a bare traceback three
-frames deep — confirmed live against a real bare-install container (`playground/FINDINGS.md`
-§10.1).
+actionable message (`Install with: uv add "hjtdev-appkit[crypto]"`) rather than a bare traceback
+three frames deep — confirmed live against a real bare-install container
+(`playground/FINDINGS.md` §10.1).
 
 ## Installation — frontend
 
@@ -71,15 +78,19 @@ installing every app, `npm ls @hjtdev/appkit` should show exactly **one** resolv
 copies means two separate React module instances, and `useApiClient` would silently return
 `null` in half the tree.
 
-**Why the two halves install differently.** The backend half is a plain git dependency because
-`uv`/`pip` correctly implement Git's `#subdirectory=` fragment. npm has no working equivalent for
-a monorepo subdirectory: `github:HjtDev/appkit#vX:frontend` silently drops both the tag and the
-subdirectory (npm parses `:frontend` as junk and falls back to the default branch), and the
-documented-looking `::path:frontend` form only changes which `package.json` npm reads metadata
-from — it still packs and installs the **entire repository root**, `backend/` and all, so
-`import "..."` fails with `ERR_PACKAGE_PATH_NOT_EXPORTED`. Neither is a bug in this repo's
-layout; it's the ceiling of what npm's git installer supports. The registry install above has
-none of these problems, which is why it's the only supported way to install the frontend half.
+**Why both halves ended up on a registry.** The backend half could, in principle, stay a plain
+git dependency — `uv`/`pip` correctly implement Git's `#subdirectory=` fragment, unlike npm (see
+below) — but that still left every host writing its own `[tool.uv.sources]` block by hand, since
+`uv` never reads a transitive dependency's *own* sources table. Publishing to PyPI removes that
+step entirely: a plain version range resolves like any other dependency. The frontend half has no
+working git-install alternative at all: `github:HjtDev/appkit#vX:frontend` silently drops both the
+tag and the subdirectory (npm parses `:frontend` as junk and falls back to the default branch),
+and the documented-looking `::path:frontend` form only changes which `package.json` npm reads
+metadata from — it still packs and installs the **entire repository root**, `backend/` and all,
+so `import "..."` fails with `ERR_PACKAGE_PATH_NOT_EXPORTED`. Neither is a bug in this repo's
+layout; it's the ceiling of what npm's git installer supports. The registry install is the only
+supported way to install the frontend half, and now the simplest way to install the backend half
+too.
 
 ## Compatibility
 
@@ -326,7 +337,7 @@ divergence between the halves is impossible to introduce by editing only one sid
 **None.** Settled: `appkit.crypto.Cipher` takes its key as a constructor argument, never from
 Django settings or an environment variable — `docs/CONTRACT.md` §3. Field-level crypto wrapping
 a host's own `FERNET_KEY` stays in the host's `tools/crypto.py` permanently; an app declaring
-`appkit[crypto]` builds a `Cipher` from its own documented `.env` key instead. Every
+`hjtdev-appkit[crypto]` builds a `Cipher` from its own documented `.env` key instead. Every
 configurable value the modules below read (`MAX_UPLOAD_BYTES`, `TRUSTED_PROXY_COUNT`,
 `SITE_URL`, `CACHE_TIMEOUT`) is an optional `APPKIT` **settings** key, not an `.env` key — see
 "Settings" above.

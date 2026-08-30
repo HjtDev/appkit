@@ -154,7 +154,7 @@ Phase 1: the package skeleton. docs/APP-DESIGN.md §2 and §3.
 Create the repo structure from §2 exactly, then:
 1. backend/pyproject.toml complete per §3.1 — build config with include-package-data, the
    dependencies from docs/CONTRACT.md item 8 with WIDE RANGES per §1.1, PLUS
-   "appkit>=1.0,<2.0" (unless this repo IS appkit — see §0), [dependency-groups] dev + test,
+   "hjtdev-appkit>=2.0,<3.0" (unless this repo IS appkit — see §0), [dependency-groups] dev + test,
    [tool.uv] default-groups, and the ruff / mypy / pytest / coverage config.
 2. The flake8-tidy-imports banned-api block, listing every OTHER app package in our
    ecosystem plus this package's own factories module (test paths exempted). Do NOT add a

@@ -262,5 +262,5 @@ def test_missing_images_extra_raises_actionable_import_error(
     """
     monkeypatch.setitem(sys.modules, "PIL", None)
     upload = SimpleUploadedFile("x.png", _PNG_BYTES, content_type="image/png")
-    with pytest.raises(ImportError, match=r"appkit\[images\]"):
+    with pytest.raises(ImportError, match=r"hjtdev-appkit\[images\]"):
         validate_image(upload)

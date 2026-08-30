@@ -65,7 +65,7 @@ def test_missing_crypto_extra_message_is_actionable() -> None:
     from appkit.crypto import Cipher, generate_key
 
     for call in (lambda: generate_key(), lambda: Cipher("not-checked-before-import")):
-        with pytest.raises(ImportError, match=r"appkit\[crypto\]"):
+        with pytest.raises(ImportError, match=r"hjtdev-appkit\[crypto\]"):
             call()
 
 
@@ -80,5 +80,5 @@ def test_missing_images_extra_message_is_actionable(tmp_path: object) -> None:
 
     png_header = b"\x89PNG\r\n\x1a\n" + b"0" * 32
     upload = SimpleUploadedFile("x.png", png_header, content_type="image/png")
-    with pytest.raises(ImportError, match=r"appkit\[images\]"):
+    with pytest.raises(ImportError, match=r"hjtdev-appkit\[images\]"):
         validate_image(upload)

@@ -43,3 +43,40 @@ jobs:
       # required before this does anything: see CHANGELOG.md's v1.0.1 entry.
       publish-npm: true
     secrets: inherit
+
+  # PyPI publish lives HERE, in the caller, not in app-package-ci.yml — the one sanctioned
+  # exception to "never add job logic here" (top-of-file note). PyPI's own docs state plainly
+  # that a reusable workflow cannot be the workflow in a Trusted Publisher: the OIDC token's
+  # `job_workflow_ref` claim for a `workflow_call` job resolves to the CALLEE
+  # (HjtDev/.github/.github/workflows/app-package-ci.yml@…), never this file, so PyPI would
+  # reject every mint-token request with invalid-publisher if this job lived in the reusable
+  # workflow instead. npm has the opposite rule — it validates the CALLING workflow's name for
+  # workflow_call — which is why publish-npm correctly stays in app-package-ci.yml. Do not
+  # "fix" this asymmetry by moving one to match the other; both placements are already correct
+  # for their own registry.
+  #
+  # Registered on pypi.org as project hjtdev-appkit, publisher repo HjtDev/appkit, workflow
+  # ci.yml, environment publish-pypi — every field below must keep matching that configuration.
+  publish-pypi:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [ci]
+    runs-on: ubuntu-latest
+    environment: publish-pypi
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.14"
+      - run: uv build
+        working-directory: backend
+      - uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: backend/dist
+          # Mirrors publish-npm's "already published — skipping" branch: the release that
+          # bootstraps trusted publishing on a NEW PyPI project can still hit a re-run of this
+          # exact tag, and failing on "file already exists" instead of skipping would turn a
+          # recoverable re-run into a stuck release.
+          skip-existing: true
