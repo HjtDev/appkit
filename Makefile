@@ -2,7 +2,7 @@
 # Postgres first and tears it down after — a fresh clone needs nothing pre-installed beyond
 # Docker and uv. See CLAUDE.md's Commands block for the equivalent raw commands.
 
-.PHONY: test test-bare lint typecheck check
+.PHONY: test test-bare lint typecheck check sync-readmes
 
 # The authoritative gate — both extras installed, >=95% coverage (docs/CONTRACT.md §9's
 # two-leg test strategy).
@@ -37,6 +37,17 @@ typecheck:
 	cd backend && uv run mypy src
 
 check: test lint typecheck test-bare
+
+# The root README.md is the single hand-maintained source; backend/README.md and
+# frontend/README.md are committed, generated copies — PyPI and npm each read a package's
+# `readme` file relative to ITS OWN project root (backend/, frontend/), never the repo root two
+# levels up, so a monorepo publishing from both halves needs a real file in each directory or
+# the registry page shows no description at all (found live: v1.0.0 through v2.0.0 all did
+# this). CI's `readme-contract` job fails the build if either copy drifts from the original —
+# run this and commit both files whenever README.md itself changes.
+sync-readmes:
+	cp README.md backend/README.md
+	cp README.md frontend/README.md
 
 # Phase 6 playground — docs/APP-DESIGN.md §11.2. Brings up Postgres, Redis, both appkit halves
 # (linked by path, not tag), and nginx. Requires playground/.env (cp playground/.env.example

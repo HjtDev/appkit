@@ -2035,6 +2035,8 @@ even when this safeguard's warning goes unread.
   "type": "module",
   "sideEffects": false,
   "repository": { "type": "git", "url": "git+https://github.com/HjtDev/appkit.git", "directory": "frontend" },
+  "homepage": "https://github.com/HjtDev/appkit#readme",
+  "bugs": "https://github.com/HjtDev/appkit/issues",
   "publishConfig": { "access": "public" },
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -2081,6 +2083,17 @@ even when this safeguard's warning goes unread.
   (`APP-DESIGN.md` §10.1) — provenance where it's actually verifiable, no silent requirement
   that every future manual publish remember `--no-provenance`. `repository` is still required,
   for that CI-flag provenance to link back to this source.
+- **`homepage`/`bugs` point at the GitHub repo, and a real `frontend/README.md` sits next to
+  `package.json`.** All three were missing through v2.0.0 — npm's registry stored the literal
+  string `"ERROR: No README data found!"` for this package's readme field, verified directly
+  against the live registry entry, because npm reads a package's README relative to the directory
+  actually being published (`frontend/`, this job's `working-directory`), never the repo root two
+  levels up. `frontend/README.md` is a committed, generated **copy** of the root `README.md` —
+  never hand-edited on its own — kept in sync by `make sync-readmes` and enforced by CI's
+  `readme-contract` job (`APP-DESIGN.md` §8, §10.1). The backend half hit the identical bug on
+  PyPI (empty `description`, no `Project-URL`s) for the identical reason; the fix is
+  `backend/pyproject.toml`'s `readme = "README.md"` (not `"../README.md"`, `APP-DESIGN.md` §3.1)
+  plus a `[project.urls]` table.
 - **`prepare` builds `dist/` before `npm publish` packs it** — the same script a git-installed
   copy would need to run for itself, kept here so `npm publish`'s local pack step and a
   contributor's own local install never diverge in what gets shipped.

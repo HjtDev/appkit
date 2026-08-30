@@ -4,6 +4,54 @@ All notable changes to appkit are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning is semantic across both
 halves under one tag (`CLAUDE.md`'s Semver triggers).
 
+## [2.0.1] — 2026-08-30
+
+### Fixed
+
+- **Both registry pages showed no description at all.** PyPI's `description` was empty and
+  npm's registry entry stored the literal string `"ERROR: No README data found!"` for `hjtdev-
+  appkit`/`@hjtdev/appkit` v2.0.0 (and every version before it) — verified directly against both
+  live registries. Root cause: both `backend/pyproject.toml` and `frontend/package.json` need a
+  real README **inside their own package directory** — PyPI/npm each read a package's readme
+  relative to the directory actually being published (`backend/`, `frontend/`), never a
+  monorepo's repo root two levels up. Neither existed.
+  - Added `backend/README.md` and `frontend/README.md` as committed, generated **copies** of the
+    root `README.md` — never hand-edited on their own. `make sync-readmes` regenerates both;
+    CI's `readme-contract` job fails the build if either drifts from the root (`docs/APP-
+    DESIGN.md` §8, the same "committed artifact must match a fresh generation" pattern §12 uses
+    for `schema.yml`/`schema.d.ts`).
+  - Added `backend/pyproject.toml`'s `readme = "README.md"` field (there was none at all) and a
+    `[project.urls]` table (Homepage/Repository/Changelog/Documentation).
+  - Added `frontend/package.json`'s `homepage`/`bugs` fields, pointing at the GitHub repo.
+  - This release exists specifically to ship these files — neither registry lets a published
+    version's description be edited after the fact, so v2.0.0's registry pages stay blank
+    forever; only a new tag fixes it going forward.
+- **Both formatters wanted to reformat the new README copies, differently from each other and
+  from the root file** — discovered live wiring this up. `ruff format` reformats Python code
+  fences inside Markdown by default, and started rewriting `backend/README.md`'s hand-aligned
+  example comments the moment that file existed inside `backend/`'s scan path. Prettier
+  reformats Markdown prose itself (italic-marker style, table-column padding) and would have
+  diverged `frontend/README.md` from the root file it must stay byte-identical to. Both excluded:
+  `backend/pyproject.toml`'s `[tool.ruff] extend-exclude = ["README.md"]`, and
+  `.prettierignore`'s `frontend/README.md`.
+- No API, behavior, or requirement-name change — `hjtdev-appkit`/`@hjtdev/appkit` installs and
+  imports exactly as they did in `[2.0.0]`. Bumped as a patch because the fix is metadata-only.
+
+### Documentation
+
+- `docs/APP-DESIGN.md` §3.1's canonical `pyproject.toml` template had the identical bug baked
+  in (`readme = "../README.md"`, which silently produces an empty PyPI description rather than
+  erroring) — fixed to `readme = "README.md"` plus the same `[project.urls]` table, with a note
+  on the TOML subtable-ordering pitfall that caused a real build failure while fixing this
+  (`project.urls.dependencies must be string` — a subtable header placed before `dependencies`
+  silently nests it under the wrong table).
+- §8 (the README contract), §10.2 (the CI template), and Phase 8 of `docs/CLAUDE-CODE-GUIDE-
+  APP.md` now document the dual-registry, README-sync structure as the ecosystem's standard
+  shape for every new app package — registry install shown as the primary command (git+
+  subdirectory demoted to an unreleased-commit fallback), name-collision checks and trusted-
+  publisher bootstrap done *before* writing any code, not after a first release ships broken.
+  `docs/INTEGRATION-GUIDE.md`'s generic install/upgrade examples updated to match.
+
 ## [2.0.0] — 2026-08-30
 
 ### Changed

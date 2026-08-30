@@ -278,7 +278,7 @@ token storage.
 
 One tool, one lockfile, one install command — in local dev, in Docker, in CI, and on the production server. `requirements.txt` does not exist in this scaffold. The reasons this matters more here than in a typical project:
 
-- Installed app packages come from `git+https://…@vX.Y.Z#subdirectory=backend` refs. `uv.lock` resolves those to exact commit hashes, so "we're on v1.4.2" means the same bytes everywhere. A `requirements.txt` line pointing at a tag does not guarantee that — a tag can be moved.
+- Installed app packages are published to PyPI (`APP-DESIGN.md` §10.2 — every app package in this ecosystem is), so a normal install is a version range like any other dependency; `uv.lock` still resolves it to an exact, hash-verified artifact. Pinning an unreleased commit instead uses a `git+https://…@vX.Y.Z#subdirectory=backend` ref, which `uv.lock` resolves to an exact commit hash the same way. A `requirements.txt` line pointing at a tag guarantees neither — a tag can be moved.
 - All apps resolve into **one shared environment** (see `APP-DESIGN.md` §1.1). A real resolver that fails loudly on a conflict is worth a great deal compared to `pip`'s first-wins-then-breaks-at-runtime behavior.
 - Dependency groups (PEP 735) keep test/lint tooling out of production images with a single `--no-default-groups` flag, instead of a second requirements file that drifts. (Not `--no-dev` — see §4.2's note on why that flag alone is not enough.)
 
