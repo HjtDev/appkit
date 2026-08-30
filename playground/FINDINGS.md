@@ -237,7 +237,10 @@ the 6th and 7th are `429`, carrying both `Retry-After` and the `throttled` envel
 
 **10.1 — appkit's own ImportError messages are correct and actionable**, confirmed by invoking
 `appkit.crypto.Cipher` and `appkit.files.validate_image` directly inside a container built with
-neither extra:
+neither extra. Transcript below is from v1.0.1, before the v2.0.0 PyPI rename — the hint text now
+reads `hjtdev-appkit[crypto]`/`hjtdev-appkit[images]` (`backend/src/appkit/crypto.py`,
+`files.py`); re-verified working post-rename via `make check` and a fresh bare-install container
+build, not re-captured here verbatim:
 
 ```
 CRYPTO ERROR: ImportError - appkit.crypto requires the 'cryptography' package.

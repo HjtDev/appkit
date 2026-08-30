@@ -7,70 +7,6 @@ resolution-markers = [
 ]
 
 [[package]]
-name = "appkit"
-version = "1.0.1"
-source = { editable = "." }
-dependencies = [
-    { name = "django" },
-    { name = "djangorestframework" },
-    { name = "jdatetime" },
-    { name = "nh3" },
-    { name = "puremagic" },
-]
-
-[package.optional-dependencies]
-crypto = [
-    { name = "cryptography" },
-]
-images = [
-    { name = "pillow" },
-]
-
-[package.dev-dependencies]
-dev = [
-    { name = "django-stubs", extra = ["compatible-mypy"] },
-    { name = "djangorestframework-stubs" },
-    { name = "mypy" },
-    { name = "pre-commit" },
-    { name = "ruff" },
-]
-test = [
-    { name = "psycopg", extra = ["binary"] },
-    { name = "pytest" },
-    { name = "pytest-cov" },
-    { name = "pytest-django" },
-    { name = "pytest-xdist" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "cryptography", marker = "extra == 'crypto'", specifier = ">=42,<51" },
-    { name = "django", specifier = ">=5.2,<7.0" },
-    { name = "djangorestframework", specifier = ">=3.15,<4.0" },
-    { name = "jdatetime", specifier = ">=5,<7" },
-    { name = "nh3", specifier = ">=0.2,<1.0" },
-    { name = "pillow", marker = "extra == 'images'", specifier = ">=11.3,<13" },
-    { name = "puremagic", specifier = ">=2,<3" },
-]
-provides-extras = ["crypto", "images"]
-
-[package.metadata.requires-dev]
-dev = [
-    { name = "django-stubs", extras = ["compatible-mypy"], specifier = ">=5.1" },
-    { name = "djangorestframework-stubs", specifier = ">=3.15" },
-    { name = "mypy", specifier = ">=1.14" },
-    { name = "pre-commit", specifier = ">=4.0" },
-    { name = "ruff", specifier = ">=0.12" },
-]
-test = [
-    { name = "psycopg", extras = ["binary"], specifier = ">=3.2.10" },
-    { name = "pytest", specifier = ">=8.3" },
-    { name = "pytest-cov", specifier = ">=6.0" },
-    { name = "pytest-django", specifier = ">=4.9" },
-    { name = "pytest-xdist", specifier = ">=3.6" },
-]
-
-[[package]]
 name = "asgiref"
 version = "3.12.1"
 source = { registry = "https://pypi.org/simple" }
@@ -466,6 +402,70 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/6d/30/03b03951873a1a0ffc7e8ca0e10c15597b59e8d0e39260704cd2ea087bc4/filelock-3.32.4.tar.gz", hash = "sha256:2bde2e4cf732e0153406d8a7bc80620ecf5e621fe0d25e41143c4e3b4733ff30", size = 222126, upload-time = "2026-08-23T17:37:55.363Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/01/a4/9b63d595d748e3aff8812b65eacc1a2c4bd90b7c2012e08e72373b4835eb/filelock-3.32.4-py3-none-any.whl", hash = "sha256:22e58ca3b1ae3b98993b762d7338367ae64fe50252bf78d59da3bfebcdf1cedd", size = 99864, upload-time = "2026-08-23T17:37:53.913Z" },
+]
+
+[[package]]
+name = "hjtdev-appkit"
+version = "2.0.0"
+source = { editable = "." }
+dependencies = [
+    { name = "django" },
+    { name = "djangorestframework" },
+    { name = "jdatetime" },
+    { name = "nh3" },
+    { name = "puremagic" },
+]
+
+[package.optional-dependencies]
+crypto = [
+    { name = "cryptography" },
+]
+images = [
+    { name = "pillow" },
+]
+
+[package.dev-dependencies]
+dev = [
+    { name = "django-stubs", extra = ["compatible-mypy"] },
+    { name = "djangorestframework-stubs" },
+    { name = "mypy" },
+    { name = "pre-commit" },
+    { name = "ruff" },
+]
+test = [
+    { name = "psycopg", extra = ["binary"] },
+    { name = "pytest" },
+    { name = "pytest-cov" },
+    { name = "pytest-django" },
+    { name = "pytest-xdist" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "cryptography", marker = "extra == 'crypto'", specifier = ">=42,<51" },
+    { name = "django", specifier = ">=5.2,<7.0" },
+    { name = "djangorestframework", specifier = ">=3.15,<4.0" },
+    { name = "jdatetime", specifier = ">=5,<7" },
+    { name = "nh3", specifier = ">=0.2,<1.0" },
+    { name = "pillow", marker = "extra == 'images'", specifier = ">=11.3,<13" },
+    { name = "puremagic", specifier = ">=2,<3" },
+]
+provides-extras = ["crypto", "images"]
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "django-stubs", extras = ["compatible-mypy"], specifier = ">=5.1" },
+    { name = "djangorestframework-stubs", specifier = ">=3.15" },
+    { name = "mypy", specifier = ">=1.14" },
+    { name = "pre-commit", specifier = ">=4.0" },
+    { name = "ruff", specifier = ">=0.12" },
+]
+test = [
+    { name = "psycopg", extras = ["binary"], specifier = ">=3.2.10" },
+    { name = "pytest", specifier = ">=8.3" },
+    { name = "pytest-cov", specifier = ">=6.0" },
+    { name = "pytest-django", specifier = ">=4.9" },
+    { name = "pytest-xdist", specifier = ">=3.6" },
 ]
 
 [[package]]

@@ -81,19 +81,13 @@ When asked to add a new app package, follow this protocol exactly, in order. Mos
    This updates `pyproject.toml` *and* `uv.lock`. Both are committed. `git` installs need no
    authentication — every package in this ecosystem is public.
 
-   Every app depends on `appkit` (`APP-DESIGN.md` §1.1), and `uv` resolves that transitively —
-   there's no separate `uv add appkit` step on the backend half. The one thing to check if that
-   resolution fails: appkit's backend half isn't published to a package index either (only its
-   frontend half is — see step 3), so the *host's* own `[tool.uv.sources]` has to name where it
-   comes from (`uv` doesn't read a transitive dependency's own `[tool.uv.sources]` block, only
-   the workspace root's):
-   ```toml
-   # host backend/pyproject.toml
-   [tool.uv.sources]
-   appkit = { git = "https://github.com/HjtDev/appkit.git", tag = "v1.0.1", subdirectory = "backend" }
-   ```
-   Add this once, the first time any app is installed; bump the `tag` only when deliberately
-   upgrading `appkit` itself (§2.1).
+   Every app depends on `hjtdev-appkit` (`APP-DESIGN.md` §1.1), and `uv` resolves that
+   transitively from PyPI — there's no separate `uv add hjtdev-appkit` step, and no
+   `[tool.uv.sources]` entry to add either, since appkit's backend half is published to PyPI
+   under that name (`README.md`'s "Installation — backend"). This only bites for a host still on
+   a pre-2.0 pin: appkit's changelog entries before `[2.0.0]` used the plain `appkit` name and a
+   git+subdirectory install, which still resolves for a tag already pinned but is no longer how
+   a fresh install should be written.
 
 3. **Install `@hjtdev/appkit`'s frontend half from the npm registry, if this is the first app
    being installed.** Every SDK declares `"@hjtdev/appkit": ">=1.0.0 <2.0.0"` as a
@@ -194,7 +188,7 @@ cd backend  && uv add "git+https://github.com/yourorg/notifications-app.git@v1.5
 cd ../frontend && npm install "github:yourorg/notifications-app#v1.5.0:frontend"
 ```
 
-Then, in order: read the app's `CHANGELOG.md` for the range you're crossing and act on **every "Host action:" line**; **check whether the new version raised its `appkit` peer/dependency range** (`APP-DESIGN.md` §1.1, §12) — if it did, upgrade `appkit` itself first, on both halves, before re-running `uv sync`/`npm install` for this app; re-copy any changed README config blocks; check whether any signal payload or service signature changed (a major bump means at least one did, and your `core/` receivers may need updating); `migrate`; `docker compose up --build`; run `make check`; update the version in `CLAUDE.md`.
+Then, in order: read the app's `CHANGELOG.md` for the range you're crossing and act on **every "Host action:" line**; **check whether the new version raised its `hjtdev-appkit` peer/dependency range** (`APP-DESIGN.md` §1.1, §12) — if it did, upgrade `appkit` itself first, on both halves, before re-running `uv sync`/`npm install` for this app; re-copy any changed README config blocks; check whether any signal payload or service signature changed (a major bump means at least one did, and your `core/` receivers may need updating); `migrate`; `docker compose up --build`; run `make check`; update the version in `CLAUDE.md`.
 
 `make check`'s `tsc --noEmit` is what actually catches a shape change the host's own code depends on — the app's `dist/index.d.ts` ships generated from its own schema (`APP-DESIGN.md` §12), so any type the host consumes that the new version changed fails to compile, same as any other breaking TS change. There's no separate host-side schema snapshot in this scaffold's own CI (`BASE-DESIGN.md` §7) — deliberately: it would only add a second gate for changes the host doesn't consume, which by definition aren't breaking it, at the cost of an artifact that churns on every unrelated endpoint change across every installed app and stops being read. If you want to see everything an upgrade changed, not just what broke the build, `diff` the running `/api/schema/` before and after — optional, human-run, not part of `make check`.
 

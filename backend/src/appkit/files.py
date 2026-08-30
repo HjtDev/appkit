@@ -47,7 +47,9 @@ if TYPE_CHECKING:
 
 __all__ = ["ImageInfo", "detect_mimetype", "validate_image", "validate_upload"]
 
-_INSTALL_HINT_IMAGES = 'Install with: uv add "appkit[images]" (or: pip install "appkit[images]")'
+_INSTALL_HINT_IMAGES = (
+    'Install with: uv add "hjtdev-appkit[images]" (or: pip install "hjtdev-appkit[images]")'
+)
 
 # Explicit, hardcoded extension<->mimetype agreement table — never mimetypes.guess_extension,
 # whose answer depends on the host OS's /etc/mime.types and disagrees across systems for
