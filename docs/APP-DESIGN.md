@@ -949,6 +949,15 @@ every release after that one). Practically:
 - Add `[project.urls]` (Homepage/Repository/Changelog, §3.1) and `package.json`'s
   `homepage`/`bugs` fields alongside the readme fix — free, and otherwise both registry pages
   show no way back to the repo at all.
+- **Both formatters reformat Markdown by default and will fight the sync requirement.** The
+  moment `backend/README.md`/`frontend/README.md` exist, `ruff format` (Python code fences) and
+  Prettier (the Markdown prose itself — italic-marker style, table-column padding) both want to
+  rewrite them — differently from each other and from the root file, which breaks the
+  byte-identical copy the `readme-contract` check requires. Exclude both copies from both tools:
+  `[tool.ruff] extend-exclude = ["README.md"]` in `backend/pyproject.toml` (§3.1), and
+  `frontend/README.md` added to `.prettierignore`. Found live wiring this up for appkit's own
+  v2.0.1 — do this before the first `make check`/`npm run lint` after adding either copy, not
+  after CI reports it.
 
 ## Recommended periodic schedule (optional)
 

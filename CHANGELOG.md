@@ -26,6 +26,14 @@ halves under one tag (`CLAUDE.md`'s Semver triggers).
   - This release exists specifically to ship these files — neither registry lets a published
     version's description be edited after the fact, so v2.0.0's registry pages stay blank
     forever; only a new tag fixes it going forward.
+- **Both formatters wanted to reformat the new README copies, differently from each other and
+  from the root file** — discovered live wiring this up. `ruff format` reformats Python code
+  fences inside Markdown by default, and started rewriting `backend/README.md`'s hand-aligned
+  example comments the moment that file existed inside `backend/`'s scan path. Prettier
+  reformats Markdown prose itself (italic-marker style, table-column padding) and would have
+  diverged `frontend/README.md` from the root file it must stay byte-identical to. Both excluded:
+  `backend/pyproject.toml`'s `[tool.ruff] extend-exclude = ["README.md"]`, and
+  `.prettierignore`'s `frontend/README.md`.
 - No API, behavior, or requirement-name change — `hjtdev-appkit`/`@hjtdev/appkit` installs and
   imports exactly as they did in `[2.0.0]`. Bumped as a patch because the fix is metadata-only.
 

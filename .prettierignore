@@ -4,4 +4,9 @@ coverage/
 package-lock.json
 backend/
 docs/
+# A generated copy of the root README (APP-DESIGN.md §8's README-sync note), never hand-edited —
+# letting Prettier reformat it here would diverge it from the root file (italic-marker style,
+# table-column padding) and fail CI's readme-contract diff check, which compares them byte for
+# byte. Found live: this is what backend/'s blanket exclude above already prevents for its copy.
+frontend/README.md
 
