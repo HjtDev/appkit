@@ -92,6 +92,8 @@ make test-bare    # bare-install check: neither extra, against the ephemeral DB
 make lint          # ruff check + format --check, backend AND ../tests together
 make typecheck    # mypy src
 make check        # all four, in that order — test-bare last, since it strips extras from the venv
+make sync-readmes # regenerate backend/README.md and frontend/README.md from the root — run and
+                   # commit both whenever README.md changes; CI's readme-contract job enforces it
 
 cd backend && uv sync --extra crypto --extra images
 uv run pytest                     # gate: authoritative, >=95% coverage, both extras installed
@@ -141,10 +143,14 @@ Every one needs a **Host action:** line in `CHANGELOG.md` — every host is affe
 
 - `README.md`'s config block matches reality: settings, `.env` keys, exported
   modules/functions, `HttpClient` shape (`APP-DESIGN.md` §8).
+- `backend/README.md` and `frontend/README.md` are current copies of `README.md`
+  (`make sync-readmes` run and committed) — PyPI/npm read a package's readme relative to its own
+  project root, never the repo root, so a stale or missing copy means an empty registry page.
 - Security checklist walked, not assumed (§9, §12).
 - Every public function has a happy + failure path test; coverage over 95%.
 - Version bumped in all three places; `CHANGELOG.md` entry with `Host action:` lines (§11).
-- Playground verified; CI green.
+- Playground verified; CI green; PyPI and npm both show a real, non-empty description after the
+  tag's publish jobs run — checked against the actual registry, not assumed from green CI.
 
 ## Git protocol
 

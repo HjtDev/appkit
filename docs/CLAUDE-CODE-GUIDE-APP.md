@@ -420,29 +420,61 @@ one test of README quality that means anything.
 
 ### Phase 8 — CI, changelog, first release
 
+Every app package in this ecosystem is public and publishes **both** halves to a public
+registry, automatically, on tag push — this is the standard shape (`APP-DESIGN.md` §10.2), not
+something bolted on after the fact. Do the name-collision check and README sync **before**
+writing any CI or registering any trusted publisher — a name collision found after code, docs,
+and a first release exist is a breaking rename; found now, it's a five-minute fix.
+
 ```
 Phase 8: CI and release.
 
-1. .github/workflows/ci.yml — the ~10-line caller from docs/APP-DESIGN.md §10.2, with
-   `publish-npm: true` in the `with:` block. If the org reusable workflow doesn't exist yet,
-   write it in full per §10.1 (including the OIDC-based `publish-npm` job, §11.1) and tell me
-   it needs to be committed to yourorg/.github separately.
-2. CHANGELOG.md — Keep a Changelog format per §11.3, with a 1.0.0 entry.
-3. Verify version lockstep: backend/pyproject.toml, frontend/package.json, CHANGELOG.md all
+1. Check the package's chosen name is free on BOTH registries before anything else — search
+   pypi.org and npmjs.com for the exact name. If either is taken, this needs a prefixed name
+   (the org account name is the usual choice, e.g. "yourorg-notifications-app" /
+   "@yourorg/notifications-app") in EVERY file before continuing, not just the taken registry's
+   side — see docs/CONTRACT.md §22 for the appkit precedent, including the pyproject.toml
+   [project.urls]-placement pitfall if you add that table (§3.1's own note).
+2. README sync (APP-DESIGN.md §8's README-sync note): `backend/pyproject.toml` declares
+   `readme = "README.md"` (never "../README.md" — silently produces an empty PyPI description,
+   §3.1). Copy the finished README.md from Phase 7 into backend/README.md and
+   frontend/README.md verbatim. Add [project.urls] to pyproject.toml and homepage/bugs to
+   package.json, pointing at the real repo.
+3. .github/workflows/ci.yml — the caller from docs/APP-DESIGN.md §10.2, with
+   `publish-npm: true` in the `with:` block AND a `publish-pypi` job committed alongside it
+   (copy §10.2's template verbatim — it cannot live in the shared reusable workflow, see that
+   section's own explanation of why PyPI and npm have opposite rules here). If the org reusable
+   workflow doesn't exist yet, write it in full per §10.1 (including the OIDC-based
+   `publish-npm` job, its `npm-environment` input, and the `readme-contract` job's README-sync
+   check) and tell me it needs to be committed to yourorg/.github separately.
+4. CHANGELOG.md — Keep a Changelog format per §11.3, with a 1.0.0 entry.
+5. Verify version lockstep: backend/pyproject.toml, frontend/package.json, CHANGELOG.md all
    at 1.0.0.
-4. Walk the security checklist in §9 item by item and report each as verified-or-not, with
+6. Walk the security checklist in §9 item by item and report each as verified-or-not, with
    the evidence. Don't mark anything verified you haven't actually checked.
-5. Walk the frontend security checklist in §12 the same way.
-6. One-time bootstrap only, before the first tag: `cd frontend && npm run build && npm publish
-   --access public` by hand — npm trusted publishing can only be configured on a package that
-   already exists — then link the repo as a Trusted Publisher on npmjs.com (package → Settings).
-   Every tag after that publishes from CI with no stored credential.
+7. Walk the frontend security checklist in §12 the same way.
+8. Register both trusted publishers before the first tag, not after:
+   - PyPI: a *pending* trusted publisher (Publishing → Add a new pending publisher) naming this
+     repo, `ci.yml`, and an environment (e.g. `publish-pypi`) — this works before the PyPI
+     project exists at all.
+   - npm: needs the package to exist first — `cd frontend && npm run build && npm publish
+     --access public` by hand, once — then link the repo as a Trusted Publisher on npmjs.com
+     (package → Settings), naming `ci.yml` and, if the config asks for one, a GitHub environment
+     (set the reusable workflow's `npm-environment` input to match if it isn't the default
+     `"publish-npm"`).
+   - Create both named GitHub environments on this repo (Settings → Environments, no protection
+     rules needed) — a trusted publisher naming an environment that doesn't exist on the repo,
+     or isn't set on the job, fails every publish with a claim mismatch on either registry.
 
 Then give me the exact commands to tag and push v1.0.0.
 ```
 
-**Verify:** CI green on a PR; the frontend package appears on the npm registry under its
-published name after the tag push; then tag, push, and confirm the tag-match assertion passes.
+**Verify:** CI green on a PR; after the tag push, both the frontend package on the npm registry
+and the backend package on PyPI appear under their published names, each showing a real
+description/readme (check the registry page or its JSON API directly — an empty description is
+the one failure mode CI cannot catch on its own, since the file being present and its content
+actually rendering are different questions); then tag, push, and confirm the tag-match assertion
+passes on both.
 
 ### Phase 9 — Install it into a real host
 
@@ -589,4 +621,9 @@ as this one is.
 - [ ] `resolution-matrix` passes at both `lowest-direct` and `highest`.
 - [ ] Security checklists (§9 and §12) walked with evidence, not assumed.
 - [ ] Installed into a fresh `base-scaffold` clone using only the README.
-- [ ] Tagged `v1.0.0`; registry entry added.
+- [ ] `backend/README.md` and `frontend/README.md` are current copies of the root `README.md`
+      (`readme-contract` CI job green); `[project.urls]`/`homepage`/`bugs` point at the real repo.
+- [ ] Tagged `v1.0.0`; PyPI and npm entries both added, each showing a real, non-empty
+      description on the registry page or its JSON API — checked directly, not assumed from a
+      green CI run, since a present-but-empty readme is a metadata bug CI's `readme-contract`
+      job (checked before the tag) covers but a real registry check confirms end to end.

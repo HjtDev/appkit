@@ -1,6 +1,6 @@
 {
   "name": "@hjtdev/appkit",
-  "version": "2.0.0",
+  "version": "2.0.1",
   "description": "Shared Django + DRF + React foundation every app package and host in this ecosystem depends on — the HttpClient interface, the shared ApiClientProvider/useApiClient pair, the error envelope, and cross-half utilities. Not an installable feature; the thing every other app is built on.",
   "license": "MIT",
   "type": "module",
@@ -10,6 +10,8 @@
     "url": "git+https://github.com/HjtDev/appkit.git",
     "directory": "frontend"
   },
+  "homepage": "https://github.com/HjtDev/appkit#readme",
+  "bugs": "https://github.com/HjtDev/appkit/issues",
   "publishConfig": {
     "access": "public"
   },

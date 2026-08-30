@@ -20,9 +20,20 @@ name = "hjtdev-appkit"
 # publication/rename above: unlike the frontend's 1.0.1 rename, the backend's prior install
 # command (`uv add "git+...#subdirectory=backend"`) actually worked, so changing the
 # requirement string is a real break for an existing consumer, not a fix to something broken.
+# 2.0.1 fixes a metadata-only bug (empty PyPI/npm descriptions, see CHANGELOG) — no API change.
 # Must match frontend/package.json and CHANGELOG.md; CI's version-lockstep job enforces it.
-version = "2.0.0"
+version = "2.0.1"
 description = "Shared Django + DRF foundation every app package and host in this ecosystem depends on — cache, mixins, error envelope, request-ID plumbing, and the HttpClient/provider contract. Not an installable feature; the thing every other app is built on."
+# Points at THIS directory's own README.md, not the repo-root one two levels up — setuptools
+# reads `readme` relative to pyproject.toml, and a monorepo's sdist build has no reliable access
+# to files outside its own project root (build isolation may operate on a copy of just this
+# directory). backend/README.md is therefore a committed, generated COPY of the root README, not
+# hand-maintained prose of its own — see the root README's own note and the `readme-contract` CI
+# job (docs/APP-DESIGN.md §8), which fails the build if the copy drifts from the original.
+# Omitting `readme` entirely was v1.0.0/v1.0.1/v2.0.0's actual bug: PyPI shows "No description
+# available" with no plan to add one until a NEW version is published — description text on an
+# already-published release is immutable on PyPI, same as on npm.
+readme = "README.md"
 requires-python = ">=3.13"
 license = "MIT"
 license-files = ["LICENSE"]
@@ -44,6 +55,17 @@ dependencies = [
     # named explicitly here per docs/CONTRACT.md §9 so `uv tree` doesn't surprise anyone.
     "jdatetime>=5,<7",
 ]
+
+# A TOML subtable, not a plain key — MUST stay after every bare `[project]` key (`dependencies`
+# above included). A subtable header implicitly closes the parent table to further bare keys, so
+# placing this any earlier would silently nest `dependencies`/optional-dependencies under
+# `[project.urls]` instead of `[project]` (caught live: setuptools rejected the build with
+# `project.urls.dependencies must be string` — TOML had swallowed the array).
+[project.urls]
+Homepage = "https://github.com/HjtDev/appkit"
+Repository = "https://github.com/HjtDev/appkit"
+Changelog = "https://github.com/HjtDev/appkit/blob/main/CHANGELOG.md"
+Documentation = "https://github.com/HjtDev/appkit/blob/main/docs/APP-DESIGN.md"
 
 # Extras = features a CONSUMER opts into, installed with hjtdev-appkit[crypto] /
 # hjtdev-appkit[images]. cryptography (42 lifetime OSV advisories) and pillow (153) are kept
@@ -115,6 +137,12 @@ appkit = ["py.typed", "locale/*/LC_MESSAGES/*.po", "locale/*/LC_MESSAGES/*.mo"]
 line-length = 100
 target-version = "py313"
 src = ["src", "../tests"]
+# backend/README.md is a generated copy of the repo-root README (§8's README-sync note) — ruff
+# format reformats Python code fences inside Markdown files by default, and running it here
+# would rewrite the README's hand-aligned example comments to satisfy a formatter whose job is
+# backend/src and tests/, not narrative documentation. Found live the moment README.md first
+# existed inside this directory.
+extend-exclude = ["README.md"]
 
 [tool.ruff.lint]
 select = [

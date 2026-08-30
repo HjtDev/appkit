@@ -72,14 +72,21 @@ When asked to add a new app package, follow this protocol exactly, in order. Mos
 
 1. **Read the app's `README.md` first**, before installing anything. It is the source of truth for every subsequent step — settings, env keys, throttle scopes, URL paths, signal payloads. Fetch it from the app's repo at the tag you're about to install, not from `main`, since `main` may document unreleased configuration.
 
-2. **Install the backend half**, pinned to a release tag:
+2. **Install the backend half.** Every app package in this ecosystem publishes to PyPI
+   (`APP-DESIGN.md` §10.2 — the standard shape, not an exception), so a normal install is a
+   version range, same as any other dependency:
    ```bash
    cd backend
+   uv add "notifications-app>=1.4,<2.0"
+   ```
+   If the app has extras you need: `uv add "notifications-app[sms]>=1.4,<2.0"`.
+   Pinning an unreleased commit instead needs the git+subdirectory form (works because
+   `uv`/`pip` correctly implement Git's `#subdirectory=` fragment):
+   ```bash
    uv add "git+https://github.com/yourorg/notifications-app.git@v1.4.2#subdirectory=backend"
    ```
-   If the app has extras you need: `uv add "notifications-app[sms] @ git+…@v1.4.2#subdirectory=backend"`.
-   This updates `pyproject.toml` *and* `uv.lock`. Both are committed. `git` installs need no
-   authentication — every package in this ecosystem is public.
+   Either way this updates `pyproject.toml` *and* `uv.lock`, and both are committed. Neither
+   form needs authentication — every package in this ecosystem is public.
 
    Every app depends on `hjtdev-appkit` (`APP-DESIGN.md` §1.1), and `uv` resolves that
    transitively from PyPI — there's no separate `uv add hjtdev-appkit` step, and no
@@ -107,16 +114,18 @@ When asked to add a new app package, follow this protocol exactly, in order. Mos
    the `::path:` form) the entire repository root installs instead of just `frontend/`. See
    `README.md`'s "Installation — frontend" for the full explanation.
 
-4. **Install the app's own frontend half**, pinned to the same tag as its backend half. If the
-   app publishes to a registry (recommended — see the note above), that looks like:
+4. **Install the app's own frontend half**, pinned to the same tag as its backend half. Every app
+   package publishes its frontend half to npm too (same §10.2 standard, and the only reliable
+   option — see the note above):
    ```bash
    npm install @yourorg/notifications-app@1.4.2
    ```
-   If it doesn't yet and still ships via git, be aware `github:yourorg/notifications-app#v1.4.2:frontend`
-   has the same tag/subdirectory-dropping failure mode `appkit` itself hit at v1.0.0 — verify the
-   install actually resolved the tagged `frontend/` tree (`npm ls <package>` should show a
-   version, not `main`'s) before trusting it. Either way, the versions must match. A mismatched
-   pair is the single most likely cause of "the hook returns `undefined` for a field the API
+   If an app genuinely hasn't published yet and still ships via git, be aware
+   `github:yourorg/notifications-app#v1.4.2:frontend` has the same tag/subdirectory-dropping
+   failure mode `appkit` itself hit at v1.0.0 — verify the install actually resolved the tagged
+   `frontend/` tree (`npm ls <package>` should show a version, not `main`'s) before trusting it.
+   Either way, the versions must match. A mismatched pair is the single most likely cause of
+   "the hook returns `undefined` for a field the API
    clearly sends."
 
 5. **Copy the configuration block from the app's `README.md`** into `backend/config/settings.py` — `INSTALLED_APPS`, `MIDDLEWARE` (if any), its `REST_FRAMEWORK['DEFAULT_THROTTLE_RATES']` entries, and its settings dict (e.g. `NOTIFICATIONS = {...}`). Copy it verbatim; do not write these from memory or infer them from the package's source. Only adapt naming if there's a real collision, and if there is, note it in `CLAUDE.md` (§8) because it becomes a permanent local deviation.
@@ -184,8 +193,8 @@ Skipping steps or reordering them produces confusing failures — running `migra
 ### 2.1 Upgrading an installed app
 
 ```bash
-cd backend  && uv add "git+https://github.com/yourorg/notifications-app.git@v1.5.0#subdirectory=backend" --upgrade
-cd ../frontend && npm install "github:yourorg/notifications-app#v1.5.0:frontend"
+cd backend  && uv add "notifications-app>=1.5,<2.0" --upgrade
+cd ../frontend && npm install @yourorg/notifications-app@1.5.0
 ```
 
 Then, in order: read the app's `CHANGELOG.md` for the range you're crossing and act on **every "Host action:" line**; **check whether the new version raised its `hjtdev-appkit` peer/dependency range** (`APP-DESIGN.md` §1.1, §12) — if it did, upgrade `appkit` itself first, on both halves, before re-running `uv sync`/`npm install` for this app; re-copy any changed README config blocks; check whether any signal payload or service signature changed (a major bump means at least one did, and your `core/` receivers may need updating); `migrate`; `docker compose up --build`; run `make check`; update the version in `CLAUDE.md`.

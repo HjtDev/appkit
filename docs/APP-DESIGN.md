@@ -205,7 +205,13 @@ version = "1.4.2"                    # kept in lockstep with CHANGELOG.md + pack
 description = "Multi-channel notification delivery for Django, as an installable app package."
 requires-python = ">=3.13"           # a RANGE, not a pin — a host may be on 3.13 or 3.14
 license = "MIT"
-readme = "../README.md"
+# "README.md", not "../README.md" — a build backend reads `readme` relative to THIS file, and a
+# monorepo's sdist build has no reliable access to a file outside its own project root (build
+# isolation may operate on a copy of just backend/). backend/README.md is a committed, generated
+# COPY of the repo-root README (§8's README-sync note), never hand-written prose of its own —
+# pointing this at "../README.md" instead is what silently shipped three real releases with an
+# empty PyPI description before anyone noticed (`docs/CONTRACT.md` §22).
+readme = "README.md"
 
 # Wide ranges on anything the host also depends on — see §1.1
 dependencies = [
@@ -214,6 +220,16 @@ dependencies = [
     "drf-spectacular>=0.27,<1.0",
     "python-decouple>=3.8,<4.0",
 ]
+
+# A TOML subtable, not a plain key — MUST come after every bare `[project]` key above
+# (`dependencies` included). A subtable header implicitly closes the parent table to further bare
+# keys, so placing this any earlier silently nests `dependencies`/`optional-dependencies` under
+# `[project.urls]` instead of `[project]` — caught live: setuptools rejects the build with
+# `project.urls.dependencies must be string` once that happens.
+[project.urls]
+Homepage = "https://github.com/yourorg/notifications-app"
+Repository = "https://github.com/yourorg/notifications-app"
+Changelog = "https://github.com/yourorg/notifications-app/blob/main/CHANGELOG.md"
 
 [project.optional-dependencies]
 # Extras = features a CONSUMER opts into. Installed with notifications-app[sms].
@@ -253,6 +269,11 @@ where = ["src"]
 line-length = 100
 target-version = "py313"
 src = ["src", "../tests"]
+# backend/README.md (§8's README-sync copy) sits inside this directory — `ruff format` reformats
+# Python code fences inside Markdown files by default, and without this exclude it rewrites the
+# README's own example config blocks to satisfy a formatter meant for src/ and tests/, not
+# narrative documentation. Found live the moment a package's backend/README.md first existed.
+extend-exclude = ["README.md"]
 
 [tool.ruff.lint]
 select = [
@@ -830,6 +851,15 @@ Every app's `README.md` must include a **copy-paste-ready configuration block** 
 ````markdown
 ## Installation — backend
 
+Published to PyPI — every app package in this ecosystem is (§10.2):
+
+```bash
+uv add "notifications-app>=1.4,<2.0"
+```
+
+Pinning an unreleased commit instead of a tagged release still works via the git+subdirectory
+form, since `uv`/`pip` correctly implement Git's `#subdirectory=` fragment:
+
 ```bash
 uv add "git+https://github.com/yourorg/notifications-app.git@v1.4.2#subdirectory=backend"
 ```
@@ -897,6 +927,28 @@ uv run python manage.py migrate notifications_app
 
 `notifications_app.factories` exports `NotificationFactory` and `UserFactory` for host
 tests. Add `factory-boy` to your own test dependency group to use them.
+````
+
+**README sync — a structural requirement, not a suggestion.** The repo root's `README.md` above
+is the single hand-maintained source. PyPI and npm each read a published package's readme
+relative to *its own* project root (`backend/`, `frontend/`), never a monorepo's repo root two
+directories up — so `backend/README.md` and `frontend/README.md` must exist as real,
+byte-identical **copies** of the root file, or the registry page shows no description at all
+(appkit's own v1.0.0 through v2.0.0 all shipped this way, undetected, until a human noticed both
+registry pages showed no description at all — see `docs/CONTRACT.md` §22; CI now catches it for
+every release after that one). Practically:
+
+- `backend/pyproject.toml` declares `readme = "README.md"` (relative to `backend/`, i.e.
+  `backend/README.md` — never `"../README.md"`, see §3.1's own note on why that path silently
+  fails).
+- A single Make target regenerates both copies: `cp README.md backend/README.md && cp README.md
+  frontend/README.md`. Run it — and commit both files — every time the root `README.md` changes.
+- CI's `readme-contract` job (§10.1) fails the build if either copy has drifted from the root,
+  the same "committed artifact must match a fresh generation" pattern §12 uses for
+  `schema.yml`/`schema.d.ts`.
+- Add `[project.urls]` (Homepage/Repository/Changelog, §3.1) and `package.json`'s
+  `homepage`/`bugs` fields alongside the readme fix — free, and otherwise both registry pages
+  show no way back to the repo at all.
 
 ## Recommended periodic schedule (optional)
 
@@ -1305,6 +1357,11 @@ jobs:
 
 ### 10.2 What an app repo actually commits
 
+**Every app package repo in this ecosystem is public and publishes both halves to a public
+registry, automatically, on tag push.** That is the default shape, not an opt-in extra a package
+adds later — a new app repo is public from creation, registers a PyPI project and an npm package
+before its first real tag, and its `ci.yml` looks like this from day one:
+
 ```yaml
 # .github/workflows/ci.yml
 name: CI
@@ -1314,31 +1371,80 @@ on:
     tags: ["v*"]
   pull_request:
 
+# id-token: write is required the moment publish-npm/publish-pypi exist at all — see the
+# permissions block below.
+permissions:
+  contents: read
+  id-token: write
+
 jobs:
   ci:
     uses: yourorg/.github/.github/workflows/app-package-ci.yml@main
     with:
       package-name: notifications_app
       coverage-threshold: 85
+      publish-npm: true
     secrets: inherit
+
+  # PyPI publish CANNOT live in app-package-ci.yml — see the note below this template. Every
+  # package that publishes to PyPI commits this exact job, verbatim except for
+  # `packages-dir`/`environment` if the package's own layout differs from backend/.
+  publish-pypi:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [ci]
+    runs-on: ubuntu-latest
+    environment: publish-pypi
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.14"
+      - run: uv build
+        working-directory: backend
+      - uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: backend/dist
+          skip-existing: true
 ```
 
-**Setting `publish-npm: true` needs one more block in the caller, not just the `with:` line.**
-A reusable workflow's job can only *downscope* the permissions the calling workflow grants, never
-escalate past them — the `publish-npm` job (§10.1) requests `id-token: write` for OIDC, so if the
-repo's default `GITHUB_TOKEN` permissions are the (increasingly common) restrictive `read` default,
-the whole `workflow_call` fails **validation before any job runs at all** — a zero-job
-`startup_failure`, not a red `publish-npm` job specifically, discovered live wiring this up for
-appkit v1.0.1. Add:
+**Before the first tag, register the name on both registries and wire the trusted publishers —
+this is not optional bootstrap-later work, it's part of creating the repo:**
 
-```yaml
-permissions:
-  contents: read
-  id-token: write
-```
+1. Check the desired name is free on **both** PyPI and npm before committing to it anywhere in
+   the code (`pyproject.toml`, `package.json`, docs, CI). A collision on either registry (as
+   happened to appkit on both — `docs/CONTRACT.md` §22) forces a prefixed name after the fact,
+   which is a breaking rename once anything has shipped. Cheap to check up front, expensive to
+   fix later.
+2. On PyPI: register a **pending** trusted publisher (Publishing → Add a new pending publisher)
+   naming this repo, `ci.yml`, and a chosen environment name (e.g. `publish-pypi`) — this can be
+   done before the project exists at all; the first successful tag run creates it.
+3. On npm: the package must exist first (trusted publishing can't bootstrap a brand-new npm
+   package the way PyPI's pending publishers can) — `cd frontend && npm publish --access public`
+   once, by hand, then on npmjs.com open the package's Settings → Trusted Publisher and link this
+   repo + `ci.yml`. If that config names a specific GitHub environment, add
+   `environment: <that name>` to `publish-npm`'s call via the reusable workflow's
+   `npm-environment` input (default: `"publish-npm"`) — an environment named in npm's config that
+   doesn't also exist as a real GitHub environment on this repo, and isn't set on the job, fails
+   every publish with a claim mismatch.
+4. Create both GitHub environments named above (Settings → Environments, no protection rules
+   needed) — PyPI and npm both reject a token whose `environment` claim doesn't match one that
+   actually exists on the repo.
+5. Add the package's real README (§8) at `README.md`, `backend/README.md`, and
+   `frontend/README.md` before the first publish — see §8's README-sync note. A first release
+   with a real README costs nothing; fixing it later needs a whole new version, since neither
+   registry lets a published release's description be edited after the fact.
 
-at the top level of `ci.yml`, alongside `on:`/`jobs:` — a package that never sets
-`publish-npm: true` doesn't need this.
+**Why the template above has a top-level `permissions:` block.** A reusable workflow's job can
+only *downscope* the permissions the calling workflow grants, never escalate past them — the
+`publish-npm` job (§10.1) requests `id-token: write` for OIDC, so if the repo's default
+`GITHUB_TOKEN` permissions are the (increasingly common) restrictive `read` default, the whole
+`workflow_call` fails **validation before any job runs at all** — a zero-job `startup_failure`,
+not a red `publish-npm` job specifically, discovered live wiring this up for appkit v1.0.1. A
+package that sets neither `publish-npm: true` nor commits its own `publish-pypi` job doesn't need
+this block.
 
 **Publishing the backend half to PyPI cannot use `publish-npm`'s pattern — the job has to live in
 the CALLER's `ci.yml`, not in `app-package-ci.yml`.** This is not a style choice; it's forced by
