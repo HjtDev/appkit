@@ -4,6 +4,24 @@ All notable changes to appkit are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning is semantic across both
 halves under one tag (`CLAUDE.md`'s Semver triggers).
 
+## [2.0.2] — 2026-09-02
+
+Metadata/tooling-only patch — no API change.
+
+### Fixed
+
+- **`Documentation` URL in `[project.urls]` pointed at `docs/APP-DESIGN.md`**, a path that no
+  longer resolves now that the five shared design docs (`APP-DESIGN.md`, `BASE-DESIGN.md`,
+  `INTEGRATION-GUIDE.md`, `CLAUDE-CODE-GUIDE-APP.md`, `CLAUDE-CODE-GUIDE-BASE.md`) live in
+  `HjtDev/ecosystem-docs` instead of this repo (`BASE-DESIGN.md` §11.4). Repointed at
+  `https://github.com/HjtDev/ecosystem-docs/blob/main/APP-DESIGN.md`.
+
+### Added
+
+- **`make docs-link`** — symlinks the five shared design docs from a sibling `ecosystem-docs`
+  checkout instead of holding a local copy of each (`BASE-DESIGN.md` §11.4). `docs/CONTRACT.md`
+  (this app's own public-surface contract) is untouched — genuinely local, stays a real file.
+
 ## [2.0.1] — 2026-08-30
 
 ### Fixed
