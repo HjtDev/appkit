@@ -20,6 +20,13 @@ an app"). It isn't an installable feature — it's what every other app and ever
 **Read `docs/APP-DESIGN.md` in full before making changes**, and `docs/CONTRACT.md` once
 Phase 0 writes it. This file is the fast reference.
 
+**Shared docs live in `HjtDev/ecosystem-docs`, not here.** `docs/APP-DESIGN.md`,
+`docs/BASE-DESIGN.md`, `docs/INTEGRATION-GUIDE.md`, `docs/CLAUDE-CODE-GUIDE-APP.md`, and
+`docs/CLAUDE-CODE-GUIDE-BASE.md` are symlinks into a sibling `../ecosystem-docs` checkout
+(`make docs-link`) — the same five files, unchanged, shared with `base-scaffold` and every app
+package after this one. **Edit them there, never here.** `docs/CONTRACT.md` is this project's
+own and stays a real file.
+
 ## The rules that define this package
 
 1. **appkit imports no app package**, and has no `appkit` exception of its own to lean on — it

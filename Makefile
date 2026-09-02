@@ -2,7 +2,7 @@
 # Postgres first and tears it down after — a fresh clone needs nothing pre-installed beyond
 # Docker and uv. See CLAUDE.md's Commands block for the equivalent raw commands.
 
-.PHONY: test test-bare lint typecheck check sync-readmes
+.PHONY: test test-bare lint typecheck check sync-readmes docs-link
 
 # The authoritative gate — both extras installed, >=95% coverage (docs/CONTRACT.md §9's
 # two-leg test strategy).
@@ -48,6 +48,33 @@ check: test lint typecheck test-bare
 sync-readmes:
 	cp README.md backend/README.md
 	cp README.md frontend/README.md
+
+# Symlinks the five design docs shared across every project in this ecosystem — APP-DESIGN.md,
+# BASE-DESIGN.md, INTEGRATION-GUIDE.md, CLAUDE-CODE-GUIDE-APP.md, CLAUDE-CODE-GUIDE-BASE.md —
+# from a sibling checkout of HjtDev/ecosystem-docs, instead of holding a local copy of each.
+# docs/CONTRACT.md (this app's own public-surface contract) is untouched — genuinely local.
+# Idempotent; safe to re-run. See ecosystem-docs/README.md and this repo's own CLAUDE.md for the
+# "edit there, never here" convention this depends on.
+SHARED_DOCS = APP-DESIGN.md BASE-DESIGN.md INTEGRATION-GUIDE.md CLAUDE-CODE-GUIDE-APP.md \
+	CLAUDE-CODE-GUIDE-BASE.md
+
+docs-link:
+	@test -d ../ecosystem-docs || { \
+		echo "../ecosystem-docs not found — clone it as a sibling of this repo first:" >&2; \
+		echo "  cd .. && git clone https://github.com/HjtDev/ecosystem-docs.git" >&2; \
+		exit 1; \
+	}
+	@for f in $(SHARED_DOCS); do \
+		rm -f docs/$$f; \
+		ln -s ../../ecosystem-docs/$$f docs/$$f; \
+	done
+	@for f in $(SHARED_DOCS); do \
+		test -e docs/$$f || { \
+			echo "docs/$$f is a broken symlink — expected ../ecosystem-docs/$$f to exist" >&2; \
+			exit 1; \
+		}; \
+	done
+	@echo "Linked $(words $(SHARED_DOCS)) shared docs from ../ecosystem-docs/ (all resolve)"
 
 # Phase 6 playground — docs/APP-DESIGN.md §11.2. Brings up Postgres, Redis, both appkit halves
 # (linked by path, not tag), and nginx. Requires playground/.env (cp playground/.env.example
